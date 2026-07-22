@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>log_splitter</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0e1218; }
+    #app { position: fixed; inset: 0; }
+    #app canvas { display: block; }
+    .hud { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #e8e2d4;
+           user-select: none; -webkit-user-select: none; }
+    #hint {
+      position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+      font-size: 13px; letter-spacing: 0.04em; opacity: 0.55; text-align: center;
+      transition: opacity 1.2s ease; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    }
+    #caption {
+      position: fixed; top: 30px; left: 50%; transform: translateX(-50%);
+      font-size: 14px; letter-spacing: 0.08em; opacity: 0; text-align: center;
+      transition: opacity 0.8s ease; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    }
+    #gear {
+      position: fixed; top: 16px; right: 16px; width: 34px; height: 34px;
+      border: none; border-radius: 8px; background: rgba(20, 24, 30, 0.45);
+      color: #e8e2d4; font-size: 17px; cursor: pointer; opacity: 0.6;
+      transition: opacity 0.2s ease;
+    }
+    #gear:hover { opacity: 1; }
+    #panel {
+      position: fixed; top: 58px; right: 16px; width: 240px; padding: 14px 16px;
+      border-radius: 10px; background: rgba(16, 20, 26, 0.88); font-size: 13px;
+      line-height: 1.65; display: none; backdrop-filter: blur(6px);
+    }
+    #panel.open { display: block; }
+    #panel h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.12em;
+                text-transform: uppercase; opacity: 0.6; }
+    #panel .stat { opacity: 0.85; margin-bottom: 10px; }
+    #panel .stat b { color: #f0c987; font-weight: 600; }
+    #panel label { display: block; cursor: pointer; opacity: 0.9; }
+    #panel input { accent-color: #f0c987; margin-right: 7px; }
+    #panel hr { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0; }
+    #panel button.reset {
+      margin-top: 8px; padding: 5px 10px; border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px; background: transparent; color: #e8e2d4; cursor: pointer;
+      font-family: inherit; font-size: 12px; opacity: 0.7;
+    }
+    #panel button.reset:hover { opacity: 1; border-color: #c26a5a; color: #c26a5a; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="caption" class="hud"></div>
+  <div id="hint" class="hud"></div>
+  <button id="gear" class="hud" title="settings">⚙</button>
+  <div id="panel" class="hud">
+    <h3>Woodpile</h3>
+    <div class="stat"><b id="stat-cords">0.00</b> cords stacked · <b id="stat-logs">0</b> rounds split</div>
+    <hr />
+    <h3>Input</h3>
+    <label><input type="radio" name="mode" value="tap" checked /> Tap — click where to split</label>
+    <label><input type="radio" name="mode" value="swing" /> Swing — drag down, drive up</label>
+    <hr />
+    <label><input type="checkbox" id="opt-sound" checked /> Sound</label>
+    <button class="reset" id="btn-reset">Reset woodpile</button>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
