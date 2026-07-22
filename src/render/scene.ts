@@ -1,14 +1,48 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/rng';
 
+/** where the camera sits for the current viewport shape */
+export interface CameraFrame {
+  height: number;
+  dist: number;
+  lookAtY: number;
+}
+
 export interface Yard {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   /** world y of the top of the chopping block */
   blockTop: number;
+  /** current framing; recomputed on resize, read by the idle camera drift */
+  frame: CameraFrame;
+  /**
+   * Re-render the shadow map on this frame. Call while anything is actually
+   * moving; the sun drifts too slowly to need it otherwise.
+   */
+  nudgeShadows(): void;
   /** advance ambient time-of-day drift */
   update(dt: number): void;
+}
+
+/**
+ * Framing has to work from a phone held upright to a wide desktop window.
+ * A narrow viewport can't fit the pile across its width, so portrait trades
+ * sideways room for a higher, steeper camera — the semicircle then reads up
+ * the screen, which is the axis a phone actually has to spare.
+ */
+export function cameraFrameFor(aspect: number): CameraFrame {
+  const t = Math.max(0, Math.min((aspect - 0.5) / 1.1, 1)); // 0 = tall, 1 = wide
+  return {
+    height: 1.9 + t * 0.15,
+    dist: 2.6 + t * 0.45,
+    lookAtY: 0.6 - t * 0.05,
+  };
+}
+
+export function fovFor(aspect: number): number {
+  const t = Math.max(0, Math.min((aspect - 0.5) / 1.1, 1));
+  return 60 - t * 10;
 }
 
 /** in-game day length, seconds. Long enough that the light just... drifts. */
@@ -20,11 +54,14 @@ const SUN_NOON = new THREE.Color('#fff5e0');
 const SUN_GOLDEN = new THREE.Color('#ffb877');
 
 export function createYard(container: HTMLElement): Yard {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // Phones are fill-rate bound long before they're triangle bound, so cap the
+  // pixel ratio harder on small screens and shrink the shadow map to match.
+  const small = Math.min(window.innerWidth, window.innerHeight) < 640;
+  const renderer = new THREE.WebGLRenderer({ antialias: !small, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, small ? 2 : 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = small ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
@@ -32,24 +69,29 @@ export function createYard(container: HTMLElement): Yard {
   scene.background = SKY_NOON.clone();
   scene.fog = new THREE.Fog(SKY_NOON.clone(), 12, 42);
 
-  const camera = new THREE.PerspectiveCamera(
-    50, window.innerWidth / window.innerHeight, 0.05, 100,
-  );
-  camera.position.set(0, 2.05, 3.05);
-  camera.lookAt(0, 0.55, 0);
+  const startAspect = window.innerWidth / window.innerHeight;
+  const frame = cameraFrameFor(startAspect);
+  const camera = new THREE.PerspectiveCamera(fovFor(startAspect), startAspect, 0.05, 100);
+  camera.position.set(0, frame.height, frame.dist);
+  camera.lookAt(0, frame.lookAtY, 0);
 
   const hemi = new THREE.HemisphereLight('#cfe4f5', '#4a4234', 0.7);
   scene.add(hemi);
 
   const sun = new THREE.DirectionalLight(SUN_NOON.clone(), 1.6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048);
   sun.shadow.camera.left = -6;
   sun.shadow.camera.right = 6;
   sun.shadow.camera.top = 6;
   sun.shadow.camera.bottom = -6;
   sun.shadow.camera.far = 30;
   sun.shadow.bias = -0.0005;
+  // The woodpile only grows, so a per-frame shadow pass gets steadily more
+  // expensive forever — for a scene that is static between swings. Redraw it
+  // on demand instead (see nudgeShadows) plus a slow tick for the sun's drift.
+  sun.shadow.autoUpdate = false;
+  sun.shadow.needsUpdate = true;
   scene.add(sun);
   scene.add(sun.target);
 
@@ -102,43 +144,58 @@ export function createYard(container: HTMLElement): Yard {
     scene.add(tree);
   }
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+  const yard: Yard = {
+    renderer, scene, camera, blockTop: blockHeight, frame,
+    nudgeShadows: () => { sun.shadow.needsUpdate = true; },
+    update: () => {},
+  };
+
+  function relayout(): void {
+    const aspect = window.innerWidth / window.innerHeight;
+    camera.aspect = aspect;
+    camera.fov = fovFor(aspect);
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+    yard.frame = cameraFrameFor(aspect);
+  }
+  window.addEventListener('resize', relayout);
+  // iOS fires orientationchange before the new innerWidth lands
+  window.addEventListener('orientationchange', () => setTimeout(relayout, 120));
 
   let dayT = DAY_SECONDS * 0.28; // start mid-morning
   const skyColor = new THREE.Color();
   const sunColor = new THREE.Color();
 
-  return {
-    renderer,
-    scene,
-    camera,
-    blockTop: blockHeight,
-    update(dt: number) {
-      dayT = (dayT + dt) % DAY_SECONDS;
-      const p = dayT / DAY_SECONDS;
-      // golden-ness swells at the ends of the loop, noon in the middle
-      const golden = 0.5 + 0.5 * Math.cos(p * Math.PI * 2);
-      skyColor.lerpColors(SKY_NOON, SKY_GOLDEN, golden * 0.8);
-      sunColor.lerpColors(SUN_NOON, SUN_GOLDEN, golden * 0.9);
-      (scene.background as THREE.Color).copy(skyColor);
-      scene.fog!.color.copy(skyColor);
-      sun.color.copy(sunColor);
-      sun.intensity = 1.7 - golden * 0.7;
-      hemi.intensity = 0.75 - golden * 0.25;
+  let shadowTick = 0;
+  yard.update = (dt: number) => {
+    // slow heartbeat so the sun's drift still reaches the shadows
+    shadowTick -= dt;
+    if (shadowTick <= 0) {
+      sun.shadow.needsUpdate = true;
+      shadowTick = 0.6;
+    }
+    dayT = (dayT + dt) % DAY_SECONDS;
+    const p = dayT / DAY_SECONDS;
+    // golden-ness swells at the ends of the loop, noon in the middle
+    const golden = 0.5 + 0.5 * Math.cos(p * Math.PI * 2);
+    skyColor.lerpColors(SKY_NOON, SKY_GOLDEN, golden * 0.8);
+    sunColor.lerpColors(SUN_NOON, SUN_GOLDEN, golden * 0.9);
+    (scene.background as THREE.Color).copy(skyColor);
+    scene.fog!.color.copy(skyColor);
+    sun.color.copy(sunColor);
+    sun.intensity = 1.7 - golden * 0.7;
+    hemi.intensity = 0.75 - golden * 0.25;
 
-      const az = p * Math.PI * 2 + Math.PI * 0.25;
-      const el = (0.35 + 0.3 * (1 - golden)) * Math.PI * 0.5;
-      sun.position.set(
-        Math.cos(az) * Math.cos(el) * 14,
-        Math.sin(el) * 14,
-        Math.sin(az) * Math.cos(el) * 14,
-      );
-    },
+    const az = p * Math.PI * 2 + Math.PI * 0.25;
+    const el = (0.35 + 0.3 * (1 - golden)) * Math.PI * 0.5;
+    sun.position.set(
+      Math.cos(az) * Math.cos(el) * 14,
+      Math.sin(el) * 14,
+      Math.sin(az) * Math.cos(el) * 14,
+    );
   };
+
+  return yard;
 }
 
 function groundTexture(): THREE.CanvasTexture {

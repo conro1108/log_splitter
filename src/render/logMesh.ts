@@ -24,8 +24,9 @@ export function buildPieceMesh(piece: PieceState): PieceMesh {
   const matBark = new THREE.MeshStandardMaterial({
     map: barkTexture(spec), roughness: 0.95, side: THREE.DoubleSide,
   });
+  let end = endTexture(piece);
   const matEnd = new THREE.MeshStandardMaterial({
-    map: endTexture(piece), roughness: 0.85, side: THREE.DoubleSide,
+    map: end.texture, roughness: 0.85, side: THREE.DoubleSide,
   });
   const matSplit = new THREE.MeshStandardMaterial({
     map: grainTexture(spec), roughness: 0.9, side: THREE.DoubleSide,
@@ -35,17 +36,21 @@ export function buildPieceMesh(piece: PieceState): PieceMesh {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
+  // bark and grain maps are module-cached; only a bespoke end cap is ours to free
+  const releaseEnd = () => { if (!end.shared) end.texture.dispose(); };
+
   return {
     mesh,
     piece,
     refreshCracks() {
-      matEnd.map?.dispose();
-      matEnd.map = endTexture(piece);
+      releaseEnd();
+      end = endTexture(piece);
+      matEnd.map = end.texture;
       matEnd.needsUpdate = true;
     },
     dispose() {
       geo.dispose();
-      matEnd.map?.dispose();
+      releaseEnd();
       matBark.dispose();
       matEnd.dispose();
       matSplit.dispose();

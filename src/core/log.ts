@@ -47,7 +47,7 @@ export const SPECIES: Record<Species, SpeciesInfo> = {
     woodColor: '#d9b98c', barkColor: '#5a4a3c', ringColor: '#a67f52',
   },
   elm: {
-    label: 'Elm', toughness: 1.55, knotsMean: 1.8, twistMax: 1.0,
+    label: 'Elm', toughness: 1.35, knotsMean: 1.8, twistMax: 1.0,
     woodColor: '#d8c1a0', barkColor: '#6b6156', ringColor: '#a88f6e',
   },
 };

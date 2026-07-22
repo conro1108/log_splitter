@@ -36,6 +36,11 @@ export class PieceSim {
   private bodies: Body[] = [];
   private flights: Flight[] = [];
 
+  /** true while anything is falling or flying — drives on-demand shadow updates */
+  get busy(): boolean {
+    return this.bodies.length > 0 || this.flights.length > 0;
+  }
+
   /** toss a mesh with an impulse; calls onSettled once it stops moving */
   toss(
     mesh: THREE.Object3D,
@@ -143,15 +148,17 @@ export class PieceSim {
 }
 
 /**
- * Orientation for a piece lying in a slot: cylinder axis (local +Y)
- * horizontal along the slot yaw, arc bisector pointing up so wedges rest on
- * their flat faces. `bisector` is the piece's local arc-middle angle.
+ * Orientation for a piece lying in a slot: cylinder axis (local +Y) horizontal
+ * along the slot yaw, arc bisector pointing *down* so a split wedge rests on
+ * its curved bark and opens its faces upward. Bisector-up would balance the
+ * wedge on the sharp axis edge, which reads as floating.
+ * `bisector` is the piece's local arc-middle angle.
  */
 export function lyingQuaternion(slot: Slot, bisector = 0): THREE.Quaternion {
   const q = new THREE.Quaternion();
   const spin = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(0, 1, 0),
-    bisector + Math.PI / 2,
+    bisector - Math.PI / 2,
   );
   const tip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
   const yaw = new THREE.Quaternion().setFromEuler(new THREE.Euler(slot.tilt, slot.rotY, 0, 'YXZ'));
@@ -163,7 +170,16 @@ function quatForSlot(slot: Slot): THREE.Quaternion {
   return lyingQuaternion(slot);
 }
 
-/** slot-quat but with a known arc bisector (wedges land bark-up) */
+/** slot-quat but with a known arc bisector (wedges land bark-down) */
 export function quatForSlotWithBisector(slot: Slot, bisector: number): THREE.Quaternion {
   return lyingQuaternion(slot, bisector);
+}
+
+/**
+ * World position for a piece in a woodpile slot. Slots are stated as the
+ * height of the *resting surface*; a bark-down piece hangs its axis one radius
+ * above that, so the offset lives here rather than in every call site.
+ */
+export function slotPosition(slot: Slot, radius: number): THREE.Vector3 {
+  return new THREE.Vector3(slot.x, slot.y + radius, slot.z);
 }

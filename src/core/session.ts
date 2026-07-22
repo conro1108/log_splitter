@@ -46,6 +46,38 @@ export function cords(s: SessionState): number {
   return s.volume / CORD_M3;
 }
 
+export interface BundleSlot {
+  bundle: number;
+  k: number;
+}
+
+/**
+ * Group stacked pieces into per-log bundles. Pieces from one round arrive
+ * consecutively and share a seed, so a run of equal seeds is one bundle.
+ */
+export function bundleAssignments(stacked: StackedPiece[]): BundleSlot[] {
+  const out: BundleSlot[] = [];
+  let bundle = -1;
+  let k = 0;
+  let lastSeed: number | null = null;
+  for (const p of stacked) {
+    if (p.seed !== lastSeed) {
+      bundle++;
+      k = 0;
+      lastSeed = p.seed;
+    }
+    out.push({ bundle, k });
+    k++;
+  }
+  return out;
+}
+
+/** where the next piece of `seed` goes, given what has been dispatched so far */
+export function nextBundleSlot(prev: BundleSlot | null, prevSeed: number | null, seed: number): BundleSlot {
+  if (prev === null || prevSeed !== seed) return { bundle: (prev?.bundle ?? -1) + 1, k: 0 };
+  return { bundle: prev.bundle, k: prev.k + 1 };
+}
+
 const SAVE_VERSION = 1;
 
 export function serialize(s: SessionState): string {

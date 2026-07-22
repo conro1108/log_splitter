@@ -131,3 +131,75 @@ describe('resolveStrike', () => {
     }
   });
 });
+
+/**
+ * The pacing contract. A committed blow is what tap mode delivers and what a
+ * clean analog swing approximates; these counts are the felt difficulty of
+ * the game, so changing them should be a deliberate retune, not a side effect.
+ */
+describe('how many committed blows a piece takes', () => {
+  const COMMITTED = { radialFrac: 0.45, power: 0.9, accuracy: 0.95 };
+
+  function blowsToSplit(piece: PieceState, angle = 0.4): number {
+    for (let i = 1; i <= 12; i++) {
+      const r = resolveStrike(piece, { angle, ...COMMITTED }, () => 0.99);
+      if (r.outcome === 'split') return i;
+    }
+    return Infinity;
+  }
+
+  it('pops a clean seasoned pine round in one', () => {
+    expect(blowsToSplit(makeRound(spec({ species: 'pine', radius: 0.2 })))).toBe(1);
+  });
+
+  it('pops an average seasoned oak round in one', () => {
+    expect(blowsToSplit(makeRound(spec({ species: 'oak', radius: 0.165, twist: 0.2 })))).toBe(1);
+  });
+
+  it('takes two through a big green oak round', () => {
+    const p = makeRound(spec({ species: 'oak', radius: 0.2, twist: 0.35, seasoned: false }));
+    expect(blowsToSplit(p)).toBe(2);
+  });
+
+  it('takes two through the worst elm round', () => {
+    const p = makeRound(spec({ species: 'elm', radius: 0.2, twist: 1, seasoned: false }));
+    expect(blowsToSplit(p)).toBe(2);
+  });
+
+  it('halves off a big round go in one', () => {
+    for (const species of ['pine', 'oak'] as const) {
+      const half: PieceState = {
+        spec: spec({ species, radius: 0.2, seasoned: false }),
+        arcStart: 0, arcEnd: Math.PI, cracks: {},
+      };
+      expect(blowsToSplit(half, Math.PI / 2)).toBe(1);
+    }
+  });
+
+  it('only a knot square in the path drags a round out past two', () => {
+    const knotty = makeRound(spec({
+      species: 'oak', radius: 0.2, seasoned: false,
+      knots: [{ angle: 0.4, z: 0.5, size: 0.4, hardness: 1 }],
+    }));
+    expect(blowsToSplit(knotty)).toBeGreaterThan(2);
+    expect(blowsToSplit(knotty)).toBeLessThanOrEqual(5);
+  });
+
+  it('a whole round reaches four stackable quarters in a handful of blows', () => {
+    let blows = 0;
+    let stackable = 0;
+    const work: PieceState[] = [makeRound(spec({ species: 'oak', radius: 0.19, twist: 0.3 }))];
+    while (work.length && blows < 30) {
+      const p = work.pop()!;
+      if (isStackable(p)) { stackable++; continue; }
+      // halving a sector means cutting down the middle of its arc
+      const angle = isFullRound(p) ? 0.4 : p.arcStart + pieceSpan(p) / 2;
+      const r = resolveStrike(p, { angle, ...COMMITTED }, () => 0.99);
+      blows++;
+      if (r.outcome === 'split') work.push(...r.pieces!);
+      else work.push(p);
+    }
+    expect(stackable).toBe(4);
+    expect(blows).toBeLessThanOrEqual(5);
+  });
+});

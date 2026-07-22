@@ -23,8 +23,32 @@ function toTexture(c: HTMLCanvasElement): THREE.CanvasTexture {
   return t;
 }
 
-// bark and grain are shared per log; end caps are per-piece (they carry cracks)
+// bark and grain are shared per log; so is a *clean* end cap, since with no
+// cracks drawn it depends only on the log's seed. Only a piece that has been
+// struck needs a texture of its own — which matters because the woodpile grows
+// without bound, and one 256² upload per stacked piece is real memory on a
+// phone. Callers must not dispose a shared texture; see EndTexture.shared.
 const cache = new Map<string, THREE.CanvasTexture>();
+
+export interface EndTexture {
+  texture: THREE.CanvasTexture;
+  /** true when this texture is cached and owned by the module, not the caller */
+  shared: boolean;
+}
+
+export function endTexture(piece: PieceState): EndTexture {
+  const clean = Object.keys(piece.cracks).length === 0;
+  if (clean) {
+    const key = `end:${piece.spec.seed}:${isFullRound(piece) ? 'r' : 's'}`;
+    let hit = cache.get(key);
+    if (!hit) {
+      hit = drawEndTexture(piece);
+      cache.set(key, hit);
+    }
+    return { texture: hit, shared: true };
+  }
+  return { texture: drawEndTexture(piece), shared: false };
+}
 
 /**
  * End-grain face: growth rings around an off-center pith, knots as dark
@@ -32,7 +56,7 @@ const cache = new Map<string, THREE.CanvasTexture>();
  * geometry angle (uv v = 0.5 + sin/2 with flipY), so direction θ maps to
  * canvas (cos θ, -sin θ).
  */
-export function endTexture(piece: PieceState): THREE.CanvasTexture {
+function drawEndTexture(piece: PieceState): THREE.CanvasTexture {
   const spec = piece.spec;
   const info = SPECIES[spec.species];
   const rand = mulberry32(spec.seed ^ 0x5eed);

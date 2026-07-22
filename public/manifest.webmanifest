@@ -1,0 +1,14 @@
+{
+  "name": "log splitter",
+  "short_name": "log splitter",
+  "description": "A quiet 3D log-splitting sim. Read the grain, aim, swing.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#9fc3dd",
+  "theme_color": "#9fc3dd",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

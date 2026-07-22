@@ -44,6 +44,9 @@ const TAU = Math.PI * 2;
 const FULL_EPS = 1e-3;
 const BUCKET_STEP = Math.PI / 12; // 15°
 
+/** how much crack progress a unit-power, dead-accurate blow buys */
+const SWING_FORCE = 1.3;
+
 export function normalizeAngle(a: number): number {
   return ((a % TAU) + TAU) % TAU;
 }
@@ -109,8 +112,10 @@ function knotEffect(p: PieceState, angle: number): [number, Knot | undefined] {
       ? Math.min(angDist(k.angle, angle), angDist(k.angle, angle + Math.PI))
       : angDist(k.angle, angle);
     if (d >= k.size) continue;
+    // Knots stay expensive on purpose: the baseline round got easier, so the
+    // knot is what's left to read for and rotate away from.
     const prox = 1 - d / k.size; // 0 at edge of influence, 1 dead-on
-    mult *= 1 + k.hardness * 1.6 * prox;
+    mult *= 1 + k.hardness * 1.4 * prox;
     if (prox * k.hardness > worstProx) {
       worstProx = prox * k.hardness;
       worst = k;
@@ -119,13 +124,20 @@ function knotEffect(p: PieceState, angle: number): [number, Knot | undefined] {
   return [mult, worstProx > 0.45 ? worst : undefined];
 }
 
-/** how hard this piece resists a split on the given plane */
+/**
+ * How hard this piece resists a split on the given plane.
+ *
+ * Calibrated against SWING_FORCE so a committed blow lands where it should:
+ * a clean round pops in one, a big green oak or a twisted elm takes two, and
+ * only a hard knot square in the path drags it out further. See split.test.ts
+ * — the hit counts are asserted, so retuning here should start there.
+ */
 export function planeToughness(p: PieceState, angle: number): number {
   const info = SPECIES[p.spec.species];
   let t = info.toughness;
-  if (!p.spec.seasoned) t *= 1.35;
-  t *= 1 + 0.6 * Math.abs(p.spec.twist);
-  t *= (p.spec.radius / 0.165) ** 1.5;
+  if (!p.spec.seasoned) t *= 1.25;
+  t *= 1 + 0.5 * Math.abs(p.spec.twist);
+  t *= (p.spec.radius / 0.2) ** 1.8;
   t *= 0.3 + (0.7 * pieceSpan(p)) / TAU;
   const [knotMult] = knotEffect(p, angle);
   return t * knotMult;
@@ -172,8 +184,8 @@ export function resolveStrike(
   const existing = p.cracks[bucket] ?? 0;
   if (existing >= 0.2) effective *= 1.4; // landing in the opened crack
 
-  const [, knotHit] = knotEffect(p, strike.angle);
-  const gain = (effective * 0.9) / toughness;
+  const [knotMult, knotHit] = knotEffect(p, strike.angle);
+  const gain = (effective * SWING_FORCE) / toughness;
   const progress = Math.min(existing + gain, 1);
 
   if (progress >= 1) {
@@ -183,10 +195,13 @@ export function resolveStrike(
 
   p.cracks[bucket] = progress;
 
-  if (knotHit && gain < 0.3) {
+  // A knot thunk is when the knot is what stopped you — judged by how much of
+  // the resistance it contributed, not by an absolute progress threshold that
+  // would drift every time the global swing force is retuned.
+  if (knotHit && knotMult >= 1.6 && gain < 0.6) {
     return { outcome: 'knot', progress, bucket, toughness, knotHit };
   }
-  if (progress >= 0.5 && gain > 0.2 && rand() < 0.6) {
+  if (progress >= 0.55 && gain > 0.2 && rand() < 0.3) {
     return { outcome: 'stuck', progress, bucket, toughness };
   }
   return { outcome: 'partial', progress, bucket, toughness };

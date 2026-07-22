@@ -3,17 +3,19 @@ import { Sfx } from './audio';
 import { unsplitPilePos, UNSPLIT_PILE_SIZE, woodpileSlot } from './core/layout';
 import { describeLog, generateLog } from './core/log';
 import {
-  cords, deserialize, newSession, recordStacked, serialize, takeSeed,
-  type SessionState,
+  bundleAssignments, cords, deserialize, newSession, nextBundleSlot, recordStacked,
+  serialize, takeSeed, type BundleSlot, type SessionState,
 } from './core/session';
 import {
   isFullRound, isStackable, makeRound, normalizeAngle, pieceSpan, resolveStrike,
   type PieceState,
 } from './core/split';
-import { analyzeSwing, type SwingSample } from './core/swing';
+import { analyzeSwing, faultMessage, pullFraction, type SwingSample } from './core/swing';
 import { buildPieceMesh, type PieceMesh } from './render/logMesh';
 import { buildMaul } from './render/maul';
-import { lyingQuaternion, PieceSim, quatForSlotWithBisector } from './render/pieces';
+import {
+  lyingQuaternion, PieceSim, quatForSlotWithBisector, slotPosition,
+} from './render/pieces';
 import { createYard } from './render/scene';
 import { UI } from './ui';
 
@@ -54,16 +56,27 @@ let pendingPieces = 0; // tossed fragments not yet routed
 let stackFlights = 0;
 
 // rebuild the woodpile from the save — the pile is the save file
+const savedBundles = bundleAssignments(session.stacked);
 for (let i = 0; i < session.stacked.length; i++) {
   const p = session.stacked[i];
   const spec = { ...generateLog(p.seed), radius: p.r, length: p.len };
   const piece: PieceState = { spec, arcStart: 0, arcEnd: p.span, cracks: {} };
   const pm = buildPieceMesh(piece);
-  const slot = woodpileSlot(i);
-  pm.mesh.position.set(slot.x, slot.y, slot.z);
+  const { bundle, k } = savedBundles[i];
+  const slot = woodpileSlot(bundle, k);
+  pm.mesh.position.copy(slotPosition(slot, p.r));
   pm.mesh.quaternion.copy(quatForSlotWithBisector(slot, p.span / 2));
   yard.scene.add(pm.mesh);
 }
+
+// cursor for where the next stacked piece lands; pieces of one log share a
+// bundle, so this advances only when a new round starts reaching the pile
+let pileCursor: BundleSlot | null = savedBundles.length
+  ? savedBundles[savedBundles.length - 1]
+  : null;
+let pileCursorSeed: number | null = session.stacked.length
+  ? session.stacked[session.stacked.length - 1].seed
+  : null;
 
 function deliverPile(): void {
   for (let i = 0; i < UNSPLIT_PILE_SIZE; i++) {
@@ -84,7 +97,8 @@ const maul = buildMaul();
 yard.scene.add(maul);
 
 interface Pose { x: number; y: number; z: number; rx: number; ry: number; rz: number }
-const REST_POSE: Pose = { x: 0.48, y: 0.02, z: 0.24, rx: 0, ry: 0.7, rz: 0.55 };
+// leaning against the block, bit planted, broad face turned toward the camera
+const REST_POSE: Pose = { x: 0.42, y: 0.02, z: 0.3, rx: 0.12, ry: 1.35, rz: 0.62 };
 
 function applyPose(p: Pose): void {
   maul.position.set(p.x, p.y, p.z);
@@ -105,6 +119,17 @@ function currentPose(): Pose {
 
 function maulGo(to: Pose, dur: number, easeIn = false, onDone?: () => void): void {
   maulQueue.push({ to, dur, easeIn, onDone });
+}
+
+/** drop any queued animation and place the axe now — for live wind-up tracking */
+function maulSnap(to: Pose): void {
+  maulQueue.length = 0;
+  maulTween = null;
+  applyPose(to);
+}
+
+function maulMoving(): boolean {
+  return maulTween !== null || maulQueue.length > 0;
 }
 
 function updateMaul(dt: number): void {
@@ -278,14 +303,15 @@ function checkAdvance(): void {
 function routeSettled(pm: PieceMesh): void {
   pendingPieces--;
   if (isStackable(pm.piece)) {
-    const idx = session.stacked.length + stackFlights;
-    const slot = woodpileSlot(idx);
+    pileCursor = nextBundleSlot(pileCursor, pileCursorSeed, pm.piece.spec.seed);
+    pileCursorSeed = pm.piece.spec.seed;
+    const slot = woodpileSlot(pileCursor.bundle, pileCursor.k);
     const bis = pm.piece.arcStart + pieceSpan(pm.piece) / 2;
     stackFlights++;
     window.setTimeout(() => {
       sim.flyTo(
         pm.mesh,
-        new THREE.Vector3(slot.x, slot.y, slot.z),
+        slotPosition(slot, pm.piece.spec.radius),
         quatForSlotWithBisector(slot, bis),
         0.85,
         () => {
@@ -415,8 +441,8 @@ function doSwing(localAngle: number, radialFrac: number, power: number, accuracy
         current!.refreshCracks();
         shakeT = 0.2;
         maulGo({ ...struck, rx: -0.3 }, 0.18);
-        stuckClicksLeft = 2;
-        ui.hint('stuck — click to wiggle it free');
+        stuckClicksLeft = 1;
+        ui.hint(isTouch ? 'stuck — tap to work it free' : 'stuck — click to work it free');
         phase = 'stuck';
         break;
       }
@@ -440,62 +466,148 @@ function wiggle(): void {
 
 // --- input --------------------------------------------------------------
 
+const isTouch = matchMedia('(hover: none)').matches;
+
 function hintFor(mode: SessionState['mode']): string {
-  return mode === 'tap'
-    ? 'scroll to turn the log · click where you want the split'
-    : 'scroll to turn · press, pull down, then drive up through the log';
+  if (mode === 'tap') {
+    return isTouch
+      ? 'drag the log to turn it · tap where you want the split'
+      : 'scroll to turn the log · click where you want the split';
+  }
+  return isTouch
+    ? 'drag sideways to turn · hold, pull down, then flick up'
+    : 'drag sideways to turn · hold, pull down, then drive up fast';
 }
 ui.hint(hintFor(session.mode));
 
 let swingSamples: SwingSample[] = [];
 let swingAim: Aim | null = null;
 let swingDown = false;
+/** horizontal drag turns the log; only becomes a turn past a small deadzone */
+let dragTurning = false;
+let dragLastX = 0;
+let dragStartX = 0;
+let dragStartY = 0;
+
+/** the wound-up axe pose, interpolated by how far the pull has been dragged */
+function windupPose(a: Aim, pull: number): Pose {
+  const spec = current!.piece.spec;
+  const worldAngle = a.localAngle - spinOffset;
+  const faceY = yard.blockTop + spec.length;
+  const hitR = Math.min(a.radialFrac, 0.95) * spec.radius;
+  return {
+    x: Math.cos(worldAngle) * hitR + 0.1 * (1 - pull),
+    y: faceY + 0.28 + pull * 0.85,
+    z: Math.sin(worldAngle) * hitR + 0.2 + pull * 0.35,
+    rx: -0.5 - pull * 1.75,
+    ry: Math.PI / 2 - worldAngle,
+    rz: 0.1 * (1 - pull),
+  };
+}
+
+function turnLog(dxPixels: number): void {
+  if (!current) return;
+  spinOffset = normalizeAngle(spinOffset + dxPixels * 0.006);
+  current.mesh.rotation.y = spinOffset;
+}
 
 window.addEventListener('pointermove', (e) => {
+  if (swingDown) {
+    swingSamples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+    // A sideways drag before any real wind-up means "turn the log", not "swing"
+    if (!dragTurning && Math.abs(e.clientX - dragStartX) > 12
+        && Math.abs(e.clientX - dragStartX) > Math.abs(e.clientY - dragStartY)) {
+      dragTurning = true;
+    }
+    if (dragTurning) {
+      turnLog(e.clientX - dragLastX);
+      dragLastX = e.clientX;
+      return;
+    }
+    if (session.mode === 'swing' && swingAim) {
+      // the axe rises with the pull, so the gesture teaches itself
+      const pull = pullFraction(swingSamples, window.innerHeight);
+      maulSnap(windupPose(swingAim, pull));
+      ui.hint(pull > 0.35 ? 'now drive up, fast' : 'pull down to wind up');
+    }
+    return;
+  }
   updateAim(e.clientX, e.clientY);
-  if (swingDown) swingSamples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
 });
 
 window.addEventListener('pointerdown', (e) => {
   if ((e.target as HTMLElement).closest('#panel, #gear')) return;
   sfx.ensure();
+  dragTurning = false;
+  dragStartX = dragLastX = e.clientX;
+  dragStartY = e.clientY;
 
   if (phase === 'stuck') { wiggle(); return; }
   if (phase !== 'idle') return;
   updateAim(e.clientX, e.clientY);
 
-  if (session.mode === 'tap') {
-    if (!aim) return;
-    doSwing(
-      aim.localAngle,
-      aim.radialFrac,
-      0.82 + Math.random() * 0.13,
-      0.9 + Math.random() * 0.1,
-    );
-  } else {
-    swingDown = true;
-    swingAim = aim;
-    swingSamples = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
-  }
+  swingDown = true;
+  swingAim = aim;
+  swingSamples = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
 });
 
 window.addEventListener('pointerup', () => {
   if (!swingDown) return;
   swingDown = false;
-  if (phase !== 'idle' || !swingAim) return;
+  const wasTurning = dragTurning;
+  dragTurning = false;
+  if (phase !== 'idle') return;
+
+  if (wasTurning) {
+    // that gesture was a turn; leave the axe where it is
+    if (session.mode === 'swing' && swingAim) maulGo(REST_POSE, 0.25);
+    return;
+  }
+
+  if (session.mode === 'tap') {
+    if (!swingAim) return;
+    doSwing(
+      swingAim.localAngle,
+      swingAim.radialFrac,
+      0.82 + Math.random() * 0.13,
+      0.9 + Math.random() * 0.1,
+    );
+    return;
+  }
+
+  if (!swingAim) { maulGo(REST_POSE, 0.3); return; }
   const r = analyzeSwing(swingSamples, window.innerHeight);
-  if (!r.valid) return;
+  if (!r.valid) {
+    // never fail silently — say which half of the motion was missing
+    ui.caption(faultMessage(r.fault!), 1800);
+    maulGo(REST_POSE, 0.35);
+    return;
+  }
   // sideways drift in the drive pushes the strike off your line
   const localAngle = normalizeAngle(swingAim.localAngle + r.lateral * 0.35);
   const radialFrac = Math.min(swingAim.radialFrac + Math.abs(r.lateral) * 0.25, 1);
   doSwing(localAngle, radialFrac, r.power, r.accuracy);
 });
 
+window.addEventListener('pointercancel', () => {
+  if (!swingDown) return;
+  swingDown = false;
+  dragTurning = false;
+  if (session.mode === 'swing') maulGo(REST_POSE, 0.3);
+});
+
 window.addEventListener('wheel', (e) => {
   if (!current || (phase !== 'idle' && phase !== 'stuck')) return;
   spinOffset = normalizeAngle(spinOffset + e.deltaY * 0.0035);
   current.mesh.rotation.y = spinOffset;
-});
+}, { passive: true });
+
+// keep the page itself inert under a game gesture (pull-to-refresh, zoom)
+document.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('dblclick', (e) => e.preventDefault());
 
 // --- settings -----------------------------------------------------------
 
@@ -519,7 +631,18 @@ ui.onReset = () => {
 deliverPile();
 placeNext();
 
-// dev handle for driving the game headless (harmless in play)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js').catch(() => {});
+  });
+}
+
+/**
+ * Dev handle for driving the game headless. `strikeAt` aims in log-local
+ * coordinates directly, so a test driver never has to hunt for the log by
+ * sweeping the mouse across the viewport — that costs one round-trip per
+ * probe and keeps a software-rasterized WebGL canvas pinned at full tilt.
+ */
 Object.defineProperty(window, '__ls', {
   value: {
     get phase() { return phase; },
@@ -530,13 +653,34 @@ Object.defineProperty(window, '__ls', {
     get queueLen() { return queue.length; },
     get pending() { return pendingPieces; },
     get lastOutcome() { return lastOutcome; },
+    get stacked() { return session.stacked.length; },
+    strikeAt(localAngle: number, radialFrac = 0.45, power = 0.9, accuracy = 0.95) {
+      if (phase === 'stuck') { wiggle(); return 'wiggled'; }
+      if (phase !== 'idle' || !current) return phase;
+      doSwing(localAngle, radialFrac, power, accuracy);
+      return 'struck';
+    },
   },
 });
 
 const clock = new THREE.Clock();
 let elapsed = 0;
+let running = true;
+
+// A PWA left in the background must not keep rendering; on a phone that is
+// pure battery burn for frames nobody sees.
+document.addEventListener('visibilitychange', () => {
+  const visible = !document.hidden;
+  if (visible && !running) {
+    running = true;
+    clock.getDelta(); // drop the elapsed background time
+    tick();
+  }
+  running = visible;
+});
 
 function tick(): void {
+  if (!running) return;
   requestAnimationFrame(tick);
   const dt = clock.getDelta();
   elapsed += dt;
@@ -546,6 +690,9 @@ function tick(): void {
   updateMaul(dt);
   updateChips(dt);
 
+  // shadows only need redrawing while something is actually in motion
+  if (sim.busy || maulMoving() || chips.length > 0 || shakeT > 0) yard.nudgeShadows();
+
   if (current && shakeT > 0) {
     shakeT = Math.max(shakeT - dt, 0);
     const s = shakeT * 0.02;
@@ -554,10 +701,14 @@ function tick(): void {
     );
   }
 
-  // idle camera breath
-  yard.camera.position.x = Math.sin(elapsed * 0.11) * 0.04;
-  yard.camera.position.y = 2.05 + Math.sin(elapsed * 0.07) * 0.02;
-  yard.camera.lookAt(0, 0.55, 0);
+  // idle camera breath, around whatever framing the viewport calls for
+  const f = yard.frame;
+  yard.camera.position.set(
+    Math.sin(elapsed * 0.11) * 0.04,
+    f.height + Math.sin(elapsed * 0.07) * 0.02,
+    f.dist,
+  );
+  yard.camera.lookAt(0, f.lookAtY, 0);
 
   yard.renderer.render(yard.scene, yard.camera);
 }
