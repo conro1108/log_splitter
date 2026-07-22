@@ -1,6 +1,6 @@
 # log_splitter
 
-3D log splitting sim. Analog swing, real grain/knot variance, physical splits.
+3D log splitting sim. Real grain/knot variance, physical splits.
 Not a tap-timing game wearing a chopping skin.
 
 ## Play
@@ -15,10 +15,7 @@ phone held upright to a wide desktop window.
 
 - **Drag sideways** (or scroll) turns the log on the block; read the bark and end
   grain before you swing.
-- **Tap mode** (default): tap where you want the split.
-- **Swing mode**: hold, pull down to wind up — the axe rises with your drag — then
-  drive up fast. Drive speed is power; a crooked drive lands off your line or
-  glances off. Toggle in ⚙.
+- **Tap** where you want the split to aim and strike.
 - If the axe sticks, tap to work it free — your next blow in the crack hits harder.
 
 A clean round splits in one blow; a big green oak or a twisted elm takes two, and a
@@ -36,7 +33,7 @@ will eat a badly-placed blow. Crack progress persists on the log between hits.
 ## Dev
 
 ```
-npm test        # vitest — core sim (log gen, strike resolution, swing analysis, layout, save)
+npm test        # vitest — core sim (log gen, strike resolution, layout, save)
 npm run typecheck
 npm run build
 npm run icons   # regenerate PWA icons

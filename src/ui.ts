@@ -1,8 +1,5 @@
-import type { InputMode } from './core/session';
-
 /** Thin DOM glue for the HUD declared in index.html. */
 export class UI {
-  onModeChange: (mode: InputMode) => void = () => {};
   onSoundChange: (on: boolean) => void = () => {};
   onReset: () => void = () => {};
 
@@ -17,20 +14,12 @@ export class UI {
     const panel = document.getElementById('panel')!;
     gear.addEventListener('click', () => panel.classList.toggle('open'));
 
-    for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
-      radio.addEventListener('change', () => {
-        if (radio.checked) this.onModeChange(radio.value as InputMode);
-      });
-    }
     const sound = document.getElementById('opt-sound') as HTMLInputElement;
     sound.addEventListener('change', () => this.onSoundChange(sound.checked));
     document.getElementById('btn-reset')!.addEventListener('click', () => this.onReset());
   }
 
-  applySettings(mode: InputMode, sound: boolean): void {
-    for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
-      radio.checked = radio.value === mode;
-    }
+  applySettings(sound: boolean): void {
     (document.getElementById('opt-sound') as HTMLInputElement).checked = sound;
   }
 

@@ -4,8 +4,6 @@ import { pieceSpan, pieceVolume } from './split';
 /** A full cord of stacked firewood, in m³. Progress is measured honestly. */
 export const CORD_M3 = 3.62;
 
-export type InputMode = 'tap' | 'swing';
-
 export interface StackedPiece {
   r: number;
   len: number;
@@ -20,12 +18,11 @@ export interface SessionState {
   logsSplit: number;
   stacked: StackedPiece[];
   nextSeed: number;
-  mode: InputMode;
   sound: boolean;
 }
 
 export function newSession(seed = Date.now() % 1_000_000): SessionState {
-  return { volume: 0, logsSplit: 0, stacked: [], nextSeed: seed, mode: 'tap', sound: true };
+  return { volume: 0, logsSplit: 0, stacked: [], nextSeed: seed, sound: true };
 }
 
 export function takeSeed(s: SessionState): number {
@@ -111,7 +108,6 @@ export function deserialize(raw: string): SessionState | null {
       logsSplit: d.logsSplit,
       stacked,
       nextSeed: d.nextSeed,
-      mode: d.mode === 'swing' ? 'swing' : 'tap',
       sound: d.sound !== false,
     };
   } catch {

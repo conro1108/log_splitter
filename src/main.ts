@@ -10,7 +10,6 @@ import {
   isFullRound, isStackable, makeRound, normalizeAngle, pieceSpan, resolveStrike,
   type PieceState,
 } from './core/split';
-import { analyzeSwing, faultMessage, pullFraction, type SwingSample } from './core/swing';
 import { buildPieceMesh, type PieceMesh } from './render/logMesh';
 import { buildMaul } from './render/maul';
 import {
@@ -31,7 +30,7 @@ const ui = new UI();
 
 const session: SessionState =
   deserialize(localStorage.getItem(SAVE_KEY) ?? '') ?? newSession();
-ui.applySettings(session.mode, session.sound);
+ui.applySettings(session.sound);
 ui.stats(cords(session), session.logsSplit);
 sfx.enabled = session.sound;
 
@@ -119,13 +118,6 @@ function currentPose(): Pose {
 
 function maulGo(to: Pose, dur: number, easeIn = false, onDone?: () => void): void {
   maulQueue.push({ to, dur, easeIn, onDone });
-}
-
-/** drop any queued animation and place the axe now — for live wind-up tracking */
-function maulSnap(to: Pose): void {
-  maulQueue.length = 0;
-  maulTween = null;
-  applyPose(to);
 }
 
 function maulMoving(): boolean {
@@ -459,7 +451,7 @@ function wiggle(): void {
   maulGo({ ...p, rx: p.rx + 0.1 }, 0.07);
   if (stuckClicksLeft <= 0) {
     maulGo(REST_POSE, 0.5);
-    ui.hint(hintRetired ? '' : hintFor(session.mode));
+    ui.hint(hintRetired ? '' : HINT);
     phase = 'idle';
   }
 }
@@ -468,42 +460,18 @@ function wiggle(): void {
 
 const isTouch = matchMedia('(hover: none)').matches;
 
-function hintFor(mode: SessionState['mode']): string {
-  if (mode === 'tap') {
-    return isTouch
-      ? 'drag the log to turn it · tap where you want the split'
-      : 'scroll to turn the log · click where you want the split';
-  }
-  return isTouch
-    ? 'drag sideways to turn · hold, pull down, then flick up'
-    : 'drag sideways to turn · hold, pull down, then drive up fast';
-}
-ui.hint(hintFor(session.mode));
+const HINT = isTouch
+  ? 'drag the log to turn it · tap where you want the split'
+  : 'scroll to turn the log · click where you want the split';
+ui.hint(HINT);
 
-let swingSamples: SwingSample[] = [];
-let swingAim: Aim | null = null;
-let swingDown = false;
+let downAim: Aim | null = null;
+let pointerActive = false;
 /** horizontal drag turns the log; only becomes a turn past a small deadzone */
 let dragTurning = false;
 let dragLastX = 0;
 let dragStartX = 0;
 let dragStartY = 0;
-
-/** the wound-up axe pose, interpolated by how far the pull has been dragged */
-function windupPose(a: Aim, pull: number): Pose {
-  const spec = current!.piece.spec;
-  const worldAngle = a.localAngle - spinOffset;
-  const faceY = yard.blockTop + spec.length;
-  const hitR = Math.min(a.radialFrac, 0.95) * spec.radius;
-  return {
-    x: Math.cos(worldAngle) * hitR + 0.1 * (1 - pull),
-    y: faceY + 0.28 + pull * 0.85,
-    z: Math.sin(worldAngle) * hitR + 0.2 + pull * 0.35,
-    rx: -0.5 - pull * 1.75,
-    ry: Math.PI / 2 - worldAngle,
-    rz: 0.1 * (1 - pull),
-  };
-}
 
 function turnLog(dxPixels: number): void {
   if (!current) return;
@@ -512,9 +480,8 @@ function turnLog(dxPixels: number): void {
 }
 
 window.addEventListener('pointermove', (e) => {
-  if (swingDown) {
-    swingSamples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-    // A sideways drag before any real wind-up means "turn the log", not "swing"
+  if (pointerActive) {
+    // A sideways drag past the deadzone means "turn the log", not "strike"
     if (!dragTurning && Math.abs(e.clientX - dragStartX) > 12
         && Math.abs(e.clientX - dragStartX) > Math.abs(e.clientY - dragStartY)) {
       dragTurning = true;
@@ -522,13 +489,6 @@ window.addEventListener('pointermove', (e) => {
     if (dragTurning) {
       turnLog(e.clientX - dragLastX);
       dragLastX = e.clientX;
-      return;
-    }
-    if (session.mode === 'swing' && swingAim) {
-      // the axe rises with the pull, so the gesture teaches itself
-      const pull = pullFraction(swingSamples, window.innerHeight);
-      maulSnap(windupPose(swingAim, pull));
-      ui.hint(pull > 0.35 ? 'now drive up, fast' : 'pull down to wind up');
     }
     return;
   }
@@ -546,54 +506,30 @@ window.addEventListener('pointerdown', (e) => {
   if (phase !== 'idle') return;
   updateAim(e.clientX, e.clientY);
 
-  swingDown = true;
-  swingAim = aim;
-  swingSamples = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
+  pointerActive = true;
+  downAim = aim;
 });
 
 window.addEventListener('pointerup', () => {
-  if (!swingDown) return;
-  swingDown = false;
+  if (!pointerActive) return;
+  pointerActive = false;
   const wasTurning = dragTurning;
   dragTurning = false;
   if (phase !== 'idle') return;
+  if (wasTurning) return; // that gesture turned the log; don't strike
+  if (!downAim) return;
 
-  if (wasTurning) {
-    // that gesture was a turn; leave the axe where it is
-    if (session.mode === 'swing' && swingAim) maulGo(REST_POSE, 0.25);
-    return;
-  }
-
-  if (session.mode === 'tap') {
-    if (!swingAim) return;
-    doSwing(
-      swingAim.localAngle,
-      swingAim.radialFrac,
-      0.82 + Math.random() * 0.13,
-      0.9 + Math.random() * 0.1,
-    );
-    return;
-  }
-
-  if (!swingAim) { maulGo(REST_POSE, 0.3); return; }
-  const r = analyzeSwing(swingSamples, window.innerHeight);
-  if (!r.valid) {
-    // never fail silently — say which half of the motion was missing
-    ui.caption(faultMessage(r.fault!), 1800);
-    maulGo(REST_POSE, 0.35);
-    return;
-  }
-  // sideways drift in the drive pushes the strike off your line
-  const localAngle = normalizeAngle(swingAim.localAngle + r.lateral * 0.35);
-  const radialFrac = Math.min(swingAim.radialFrac + Math.abs(r.lateral) * 0.25, 1);
-  doSwing(localAngle, radialFrac, r.power, r.accuracy);
+  doSwing(
+    downAim.localAngle,
+    downAim.radialFrac,
+    0.82 + Math.random() * 0.13,
+    0.9 + Math.random() * 0.1,
+  );
 });
 
 window.addEventListener('pointercancel', () => {
-  if (!swingDown) return;
-  swingDown = false;
+  pointerActive = false;
   dragTurning = false;
-  if (session.mode === 'swing') maulGo(REST_POSE, 0.3);
 });
 
 window.addEventListener('wheel', (e) => {
@@ -611,11 +547,6 @@ document.addEventListener('dblclick', (e) => e.preventDefault());
 
 // --- settings -----------------------------------------------------------
 
-ui.onModeChange = (mode) => {
-  session.mode = mode;
-  save();
-  if (!hintRetired) ui.hint(hintFor(mode));
-};
 ui.onSoundChange = (on) => {
   session.sound = on;
   sfx.setEnabled(on);

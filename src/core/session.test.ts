@@ -33,7 +33,6 @@ describe('session', () => {
   it('round-trips through serialize/deserialize', () => {
     const s = newSession(5);
     recordStacked(s, makeRound(generateLog(9)));
-    s.mode = 'swing';
     s.sound = false;
     s.logsSplit = 3;
     expect(deserialize(serialize(s))).toEqual(s);

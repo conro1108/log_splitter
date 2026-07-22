@@ -133,9 +133,9 @@ describe('resolveStrike', () => {
 });
 
 /**
- * The pacing contract. A committed blow is what tap mode delivers and what a
- * clean analog swing approximates; these counts are the felt difficulty of
- * the game, so changing them should be a deliberate retune, not a side effect.
+ * The pacing contract. A committed blow is what a tap delivers; these counts
+ * are the felt difficulty of the game, so changing them should be a deliberate
+ * retune, not a side effect.
  */
 describe('how many committed blows a piece takes', () => {
   const COMMITTED = { radialFrac: 0.45, power: 0.9, accuracy: 0.95 };

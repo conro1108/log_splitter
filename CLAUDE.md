@@ -5,7 +5,7 @@ statically on Vercel). Read the log, aim, swing. Not a tap-timing game
 wearing a chopping skin — the wood (grain, knots, species) is the puzzle.
 
 TypeScript + Vite + Three.js, no framework. `src/core/` is pure logic (log
-generation, split resolution, swing analysis, layout, session/save) and is
+generation, split resolution, layout, session/save) and is
 the only part with tests. `src/render/` builds the Three.js scene, meshes,
 and textures. `main.ts` orchestrates. Tests are Vitest, colocated as
 `*.test.ts`.
