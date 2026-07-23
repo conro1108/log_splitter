@@ -49,15 +49,15 @@ describe('woodpileSlot', () => {
     expect(wrapped.x).toBeLessThan(woodpileSlot(BUNDLES_PER_LAYER - 1, 0).x);
   });
 
-  it('shares one center per bundle: the round reassembles', () => {
-    // every wedge of a round is placed at the same slot; reassembledPose then
-    // blooms them apart by their arc positions, which is what avoids overlap
-    const s0 = woodpileSlot(7, 0);
+  it('scatters a bundle into a low heap around its anchor', () => {
+    const anchor = woodpileSlot(7, 0);
     for (let k = 1; k < PER_BUNDLE; k++) {
       const s = woodpileSlot(7, k);
-      expect(s.x).toBeCloseTo(s0.x);
-      expect(s.y).toBeCloseTo(s0.y);
-      expect(s.z).toBeCloseTo(s0.z);
+      // pieces cluster into one heap, not spread thin or flung away
+      const spread = Math.hypot(s.x - anchor.x, s.z - anchor.z);
+      expect(spread).toBeLessThan(0.35);
+      // and stay low — a heap, never a tower
+      expect(s.y).toBeLessThan(anchor.y + 0.2);
     }
   });
 

@@ -12,7 +12,7 @@ import {
 } from './core/split';
 import { buildPieceMesh, type PieceMesh } from './render/logMesh';
 import { buildMaul } from './render/maul';
-import { lyingQuaternion, PieceSim, reassembledPose } from './render/pieces';
+import { billetPose, lyingQuaternion, PieceSim } from './render/pieces';
 import { createYard } from './render/scene';
 import { UI } from './ui';
 
@@ -60,8 +60,8 @@ for (let i = 0; i < session.stacked.length; i++) {
   const spec = { ...generateLog(p.seed), radius: p.r, length: p.len };
   const piece: PieceState = { spec, arcStart: p.arc, arcEnd: p.arc + p.span, cracks: {} };
   const pm = buildPieceMesh(piece);
-  const { bundle } = savedBundles[i];
-  const pose = reassembledPose(woodpileSlot(bundle), p.r, p.arc + p.span / 2);
+  const { bundle, k } = savedBundles[i];
+  const pose = billetPose(woodpileSlot(bundle, k), p.arc);
   pm.mesh.position.copy(pose.position);
   pm.mesh.quaternion.copy(pose.quaternion);
   yard.scene.add(pm.mesh);
@@ -301,11 +301,7 @@ function routeSettled(pm: PieceMesh): void {
   if (isStackable(pm.piece)) {
     pileCursor = nextBundleSlot(pileCursor, pileCursorSeed, pm.piece.spec.seed);
     pileCursorSeed = pm.piece.spec.seed;
-    const pose = reassembledPose(
-      woodpileSlot(pileCursor.bundle),
-      pm.piece.spec.radius,
-      pm.piece.arcStart + pieceSpan(pm.piece) / 2,
-    );
+    const pose = billetPose(woodpileSlot(pileCursor.bundle, pileCursor.k), pm.piece.arcStart);
     stackFlights++;
     window.setTimeout(() => {
       sim.flyTo(

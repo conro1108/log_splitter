@@ -171,25 +171,20 @@ function quatForSlot(slot: Slot): THREE.Quaternion {
 }
 
 /**
- * Resting pose for a wedge set back into its round, lying on its side. Every
- * piece of one round gets the same lay-flat orientation (bisector = π/2 → no
- * per-piece twist), so their baked-in arc sectors slot back together without
- * overlapping. Then each is *bloomed* a little outward along its own bark
- * bisector, opening the split lines into visible gaps — so the round reads as
- * split wood rather than a whole log.
+ * Resting pose for a single split billet dropped on the heap: laid on one of its
+ * flat split faces (a stable, low triangular prism), length along the slot yaw,
+ * bark turned up. Resting on a face — rather than bark-down (which stands the
+ * wedge point-up) — is what reads as a distinct piece of firewood in a pile.
  *
- * `radius` lifts the axis one radius above the resting surface (it lies on its
- * bark); `bisector` is the wedge's local arc-middle angle.
+ * The face lies *in* the resting surface, so there's no radius lift; `arcStart`
+ * rolls the wedge so that face ends up on the bottom.
  */
-export function reassembledPose(
+export function billetPose(
   slot: Slot,
-  radius: number,
-  bisector: number,
+  arcStart: number,
 ): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
-  const quaternion = lyingQuaternion(slot, Math.PI / 2);
-  const bloom = new THREE.Vector3(Math.cos(bisector), 0, Math.sin(bisector))
-    .applyQuaternion(quaternion)
-    .multiplyScalar(0.03);
-  const position = new THREE.Vector3(slot.x, slot.y + radius, slot.z).add(bloom);
-  return { position, quaternion };
+  return {
+    position: new THREE.Vector3(slot.x, slot.y + 0.004, slot.z),
+    quaternion: lyingQuaternion(slot, arcStart - Math.PI / 2),
+  };
 }
