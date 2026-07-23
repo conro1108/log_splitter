@@ -3,8 +3,7 @@ import { Sfx } from './audio';
 import { unsplitPilePos, UNSPLIT_PILE_SIZE, woodpileSlot } from './core/layout';
 import { describeLog, generateLog } from './core/log';
 import {
-  bundleAssignments, cords, deserialize, newSession, nextBundleSlot, recordStacked,
-  serialize, takeSeed, type BundleSlot, type SessionState,
+  cords, deserialize, newSession, recordStacked, serialize, takeSeed, type SessionState,
 } from './core/session';
 import {
   isFullRound, isStackable, makeRound, normalizeAngle, pieceSpan, resolveStrike,
@@ -54,27 +53,20 @@ let pendingPieces = 0; // tossed fragments not yet routed
 let stackFlights = 0;
 
 // rebuild the woodpile from the save — the pile is the save file
-const savedBundles = bundleAssignments(session.stacked);
 for (let i = 0; i < session.stacked.length; i++) {
   const p = session.stacked[i];
   const spec = { ...generateLog(p.seed), radius: p.r, length: p.len };
   const piece: PieceState = { spec, arcStart: p.arc, arcEnd: p.arc + p.span, cracks: {} };
   const pm = buildPieceMesh(piece);
-  const { bundle, k } = savedBundles[i];
-  const pose = billetPose(woodpileSlot(bundle, k), p.arc);
+  const pose = billetPose(woodpileSlot(i), p.arc + p.span / 2);
   pm.mesh.position.copy(pose.position);
   pm.mesh.quaternion.copy(pose.quaternion);
   yard.scene.add(pm.mesh);
 }
 
-// cursor for where the next stacked piece lands; pieces of one log share a
-// bundle, so this advances only when a new round starts reaching the pile
-let pileCursor: BundleSlot | null = savedBundles.length
-  ? savedBundles[savedBundles.length - 1]
-  : null;
-let pileCursorSeed: number | null = session.stacked.length
-  ? session.stacked[session.stacked.length - 1].seed
-  : null;
+// the next cell in the continuous rick; reserved at schedule time so pieces in
+// flight together don't fight over one slot
+let stackedCount = session.stacked.length;
 
 function deliverPile(): void {
   for (let i = 0; i < UNSPLIT_PILE_SIZE; i++) {
@@ -299,9 +291,7 @@ function checkAdvance(): void {
 function routeSettled(pm: PieceMesh): void {
   pendingPieces--;
   if (isStackable(pm.piece)) {
-    pileCursor = nextBundleSlot(pileCursor, pileCursorSeed, pm.piece.spec.seed);
-    pileCursorSeed = pm.piece.spec.seed;
-    const pose = billetPose(woodpileSlot(pileCursor.bundle, pileCursor.k), pm.piece.arcStart);
+    const pose = billetPose(woodpileSlot(stackedCount++), pm.piece.arcStart + pieceSpan(pm.piece) / 2);
     stackFlights++;
     window.setTimeout(() => {
       sim.flyTo(

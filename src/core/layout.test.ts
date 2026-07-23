@@ -1,27 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BUNDLES_PER_LAYER, PER_BUNDLE, unsplitPilePos, UNSPLIT_PILE_SIZE, woodpileSlot,
-} from './layout';
+import { SLOTS_PER_COURSE, unsplitPilePos, UNSPLIT_PILE_SIZE, woodpileSlot } from './layout';
 
 describe('woodpileSlot', () => {
   it('is deterministic', () => {
-    expect(woodpileSlot(4, 2)).toEqual(woodpileSlot(4, 2));
+    expect(woodpileSlot(14)).toEqual(woodpileSlot(14));
   });
 
   it('keeps the pile in a band around the block', () => {
-    for (let b = 0; b < 60; b++) {
-      for (let k = 0; k < PER_BUNDLE; k++) {
-        const s = woodpileSlot(b, k);
-        const r = Math.hypot(s.x, s.z);
-        expect(r).toBeGreaterThan(1.68);
-        expect(r).toBeLessThan(2.02);
-      }
+    for (let i = 0; i < 60; i++) {
+      const s = woodpileSlot(i);
+      const r = Math.hypot(s.x, s.z);
+      // a single continuous rick around the block — never sprawling outward
+      expect(r).toBeGreaterThan(1.7);
+      expect(r).toBeLessThan(2.0);
     }
   });
 
   it('leaves the sector where the player stands open', () => {
-    for (let b = 0; b < 60; b++) {
-      const s = woodpileSlot(b, 0);
+    for (let i = 0; i < 60; i++) {
+      const s = woodpileSlot(i);
       let a = Math.atan2(s.z, s.x);
       if (a < 0) a += Math.PI * 2;
       const deg = (a * 180) / Math.PI;
@@ -29,52 +26,36 @@ describe('woodpileSlot', () => {
     }
   });
 
-  it('fills left to right along the arc, one bundle per log', () => {
-    // successive bundles advance monotonically in x across a single course
+  it('fills a course left to right before starting the next', () => {
+    // consecutive pieces in one course advance monotonically along the arc
     const xs: number[] = [];
-    for (let b = 0; b < BUNDLES_PER_LAYER; b++) xs.push(woodpileSlot(b, 0).x);
+    for (let i = 0; i < SLOTS_PER_COURSE; i++) xs.push(woodpileSlot(i).x);
     for (let i = 1; i < xs.length; i++) {
       expect(xs[i]).toBeGreaterThan(xs[i - 1]);
     }
   });
 
-  it('does not start a new layer until the arc is full', () => {
-    // every bundle in the first course sits at ground level, not stacked
-    for (let b = 1; b < BUNDLES_PER_LAYER; b++) {
-      expect(woodpileSlot(b, 0).y).toBeCloseTo(woodpileSlot(0, 0).y);
+  it('climbs a course only once the one below is full', () => {
+    // the whole first course sits at ground level
+    for (let i = 1; i < SLOTS_PER_COURSE; i++) {
+      expect(woodpileSlot(i).y).toBeCloseTo(woodpileSlot(0).y);
     }
-    // the next one over starts a course on top, back at the left
-    const wrapped = woodpileSlot(BUNDLES_PER_LAYER, 0);
-    expect(wrapped.y).toBeGreaterThan(woodpileSlot(0, 0).y);
-    expect(wrapped.x).toBeLessThan(woodpileSlot(BUNDLES_PER_LAYER - 1, 0).x);
+    // the next piece starts a course on top
+    expect(woodpileSlot(SLOTS_PER_COURSE).y).toBeGreaterThan(woodpileSlot(0).y);
   });
 
-  it('scatters a bundle into a low heap around its anchor', () => {
-    const anchor = woodpileSlot(7, 0);
-    for (let k = 1; k < PER_BUNDLE; k++) {
-      const s = woodpileSlot(7, k);
-      // pieces cluster into one heap, not spread thin or flung away
-      const spread = Math.hypot(s.x - anchor.x, s.z - anchor.z);
-      expect(spread).toBeLessThan(0.35);
-      // and stay low — a heap, never a tower
-      expect(s.y).toBeLessThan(anchor.y + 0.2);
+  it('is one continuous rick, not per-round clumps', () => {
+    // neighbouring pieces sit a roughly even step apart the whole way along —
+    // no big gaps between "bundles", which is what read as separate stacks
+    const steps: number[] = [];
+    for (let i = 1; i < SLOTS_PER_COURSE; i++) {
+      const a = woodpileSlot(i - 1);
+      const b = woodpileSlot(i);
+      steps.push(Math.hypot(a.x - b.x, a.z - b.z));
     }
-  });
-
-  it('keeps a lopsided round from growing into a tower', () => {
-    // seven billets off one round should still be under knee height
-    const tallest = Math.max(...[0, 1, 2, 3, 4, 5, 6].map((k) => woodpileSlot(2, k).y));
-    expect(tallest).toBeLessThan(0.5);
-  });
-
-  it('keeps one log\'s bundle clustered together', () => {
-    const pieces = [0, 1, 2, 3].map((k) => woodpileSlot(3, k));
-    const next = woodpileSlot(4, 0);
-    for (const p of pieces) {
-      const withinBundle = Math.hypot(p.x - pieces[0].x, p.z - pieces[0].z);
-      const toNextBundle = Math.hypot(p.x - next.x, p.z - next.z);
-      expect(withinBundle).toBeLessThan(toNextBundle + 0.3);
-    }
+    const min = Math.min(...steps);
+    const max = Math.max(...steps);
+    expect(max / min).toBeLessThan(1.5);
   });
 });
 

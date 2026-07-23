@@ -181,10 +181,11 @@ function quatForSlot(slot: Slot): THREE.Quaternion {
  */
 export function billetPose(
   slot: Slot,
-  arcStart: number,
+  bisector: number,
 ): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
   return {
     position: new THREE.Vector3(slot.x, slot.y + 0.004, slot.z),
-    quaternion: lyingQuaternion(slot, arcStart - Math.PI / 2),
+    // bark bisector turned up: a rounded log top, flat split faces tucked under
+    quaternion: lyingQuaternion(slot, bisector + Math.PI),
   };
 }
