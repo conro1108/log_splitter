@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/rng';
+import { blockBarkTexture, blockTopTexture } from './textures';
 
 /** where the camera sits for the current viewport shape */
 export interface CameraFrame {
@@ -63,6 +64,11 @@ export function createYard(container: HTMLElement): Yard {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = small ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Filmic tone mapping is what pulls the look off "flat digital render" toward
+  // the warm, softly-rolled-off highlights of the reference photo. Nearly free,
+  // and it rescales every material below, so it comes first.
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -104,22 +110,30 @@ export function createYard(container: HTMLElement): Yard {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // chopping block: a fat old stump
+  // chopping block: a fat old weathered stump. Grey fissured bark on the sides,
+  // a checked end-grain face on top — the hero surface the round is split on.
   const blockHeight = 0.52;
+  const blockBark = blockBarkTexture(9001);
+  blockBark.repeat.set(5, 1);
   const block = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.34, 0.39, blockHeight, 24),
-    new THREE.MeshStandardMaterial({ color: '#6b5138', roughness: 0.95 }),
+    new THREE.CylinderGeometry(0.34, 0.39, blockHeight, 32),
+    new THREE.MeshStandardMaterial({
+      map: blockBark, bumpMap: blockBark, bumpScale: 1.4, roughness: 1,
+    }),
   );
   block.position.y = blockHeight / 2;
   block.castShadow = true;
   block.receiveShadow = true;
   scene.add(block);
   const blockFace = new THREE.Mesh(
-    new THREE.CircleGeometry(0.335, 24),
-    new THREE.MeshStandardMaterial({ color: '#a8895f', roughness: 0.9 }),
+    new THREE.CircleGeometry(0.335, 32),
+    new THREE.MeshStandardMaterial({
+      map: blockTopTexture(9001), roughness: 0.92,
+    }),
   );
   blockFace.rotation.x = -Math.PI / 2;
   blockFace.position.y = blockHeight + 0.001;
+  blockFace.receiveShadow = true;
   scene.add(blockFace);
 
   // a few background trees so the horizon isn't empty
@@ -204,17 +218,31 @@ function groundTexture(): THREE.CanvasTexture {
   c.height = 512;
   const ctx = c.getContext('2d')!;
   const rand = mulberry32(777);
-  ctx.fillStyle = '#57683f';
+  ctx.fillStyle = '#55643d';
   ctx.fillRect(0, 0, 512, 512);
-  for (let i = 0; i < 2600; i++) {
+  // broad worn dirt/leaf-litter patches under the splitting area, so it isn't
+  // a uniform lawn — the reference ground is grass shot through with dead leaves
+  for (let i = 0; i < 40; i++) {
+    const x = rand() * 512, y = rand() * 512, r = 20 + rand() * 60;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, rand() > 0.5 ? 'rgba(120, 96, 58, 0.4)' : 'rgba(92, 78, 50, 0.35)');
+    g.addColorStop(1, 'rgba(120, 96, 58, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < 3200; i++) {
     const x = rand() * 512;
     const y = rand() * 512;
     const r = 1 + rand() * 5;
     const shade = rand();
+    // greens, plus a fraction of tan/brown flecks reading as scattered dead leaves
     ctx.fillStyle =
-      shade < 0.4 ? 'rgba(70, 88, 48, 0.5)'
-      : shade < 0.75 ? 'rgba(104, 118, 66, 0.45)'
-      : 'rgba(128, 116, 74, 0.3)';
+      shade < 0.32 ? 'rgba(66, 84, 44, 0.5)'
+      : shade < 0.6 ? 'rgba(104, 120, 64, 0.45)'
+      : shade < 0.8 ? 'rgba(150, 130, 82, 0.4)'
+      : 'rgba(120, 88, 52, 0.4)';
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();

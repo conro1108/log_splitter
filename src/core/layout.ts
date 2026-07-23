@@ -16,45 +16,64 @@ export interface Slot {
   tilt: number;
 }
 
-// Kept tight and roughly symmetric behind the block: a phone in portrait has
-// very little horizontal field, and a wider ring would grow mostly off-screen.
-const PILE_RADIUS = 1.85;
 // open toward the camera, and clear of the delivery pile off to the left
 const ARC_START = (218 * Math.PI) / 180;
 const ARC_SPAN = (128 * Math.PI) / 180;
 
 /**
- * The woodpile is one continuous rick, not a clump per round. Every split piece
- * — whoever it came from — takes the next cell in a single stacked wall that
- * marches along the arc and climbs in courses. Each cell is wider than a billet
- * is long, so neighbours sit apart with a gap and never clip (there is no
- * piece-to-piece physics to untangle overlaps). Pieces lie flat and parallel,
- * lengths tangent to the arc, like split logs racked against a wall.
+ * The woodpile is a loose tumbled heap of split billets behind the block — a
+ * mound, not a stacked wall. Split pieces land in a fixed spot the moment
+ * they're made (the slot is a pure function of index, so a piece never moves
+ * once placed), and the mound is built as jittered layers that shrink and rise:
+ * a wide base course thinning to a peak, a low dome. Each piece gets a fully
+ * random yaw and a real tilt so the heap reads as tossed firewood, faces and
+ * bark every which way, rather than anything racked.
  */
-/** billets per course before the rick starts another course on top */
-export const SLOTS_PER_COURSE = 14;
-/** vertical pitch between courses — about a billet's face height */
-const COURSE_HEIGHT = 0.15;
+// mound centered behind the block, in the middle of the open-behind arc
+const HEAP_ANGLE = ARC_START + ARC_SPAN / 2;
+const HEAP_DIST = 1.7;
+const HEAP_CX = Math.cos(HEAP_ANGLE) * HEAP_DIST;
+const HEAP_CZ = Math.sin(HEAP_ANGLE) * HEAP_DIST;
+/** ground-layer footprint radius; each layer up is tighter */
+const HEAP_BASE_R = 0.72;
+/** vertical pitch between heap layers */
+const HEAP_LAYER_RISE = 0.13;
+
+/** which layer the index-th billet lands in, and where within that layer */
+function heapCell(index: number): { layer: number; i: number; size: number } {
+  let layer = 0;
+  let rem = index;
+  for (;;) {
+    // 11, 9, 7, 5, 3, then 2s forever — a broad base tapering to a peak
+    const size = Math.max(2, 11 - layer * 2);
+    if (rem < size) return { layer, i: rem, size };
+    rem -= size;
+    layer++;
+  }
+}
+
+const GOLDEN = 2.399963; // golden angle, for even disc fill within a layer
 
 /**
- * The continuous position of the `index`-th piece stacked, across all rounds.
- * Pieces face end-out (axis radial) so the wall shows their split end grain —
- * the classic look of a firewood stack seen face-on.
+ * The resting slot of the `index`-th billet added to the heap, across all
+ * rounds. Deterministic and independent of the total count.
  */
 export function woodpileSlot(index: number): Slot {
-  const course = Math.floor(index / SLOTS_PER_COURSE);
-  const i = index % SLOTS_PER_COURSE;
-  // brick-stagger alternate courses so upper pieces bridge the joints below
-  const frac = (i + 0.5 + (course % 2) * 0.5) / SLOTS_PER_COURSE;
-  const a = ARC_START + frac * ARC_SPAN;
+  const { layer, i, size } = heapCell(index);
+  const layerR = HEAP_BASE_R * Math.max(0.25, 1 - layer * 0.13);
+  // sunflower placement: even coverage of the layer's disc, rotated per layer
+  const ang = i * GOLDEN + layer * 1.7;
+  const rr = layerR * Math.sqrt((i + 0.4) / size);
+  const jx = (hash2(index, 11) - 0.5) * 0.12;
+  const jz = (hash2(index, 23) - 0.5) * 0.12;
 
   return {
-    x: Math.cos(a) * PILE_RADIUS,
-    y: course * COURSE_HEIGHT,
-    z: Math.sin(a) * PILE_RADIUS,
-    // radial: the log's length points in toward the block, end-grain out
-    rotY: -a + (hash2(index, 37) - 0.5) * 0.06,
-    tilt: (hash2(index, 53) - 0.5) * 0.03,
+    x: HEAP_CX + Math.cos(ang) * rr + jx,
+    y: 0.03 + layer * HEAP_LAYER_RISE + (hash2(index, 41) - 0.5) * 0.03,
+    z: HEAP_CZ + Math.sin(ang) * rr + jz,
+    // fully tumbled: length points any which way, with a real lean
+    rotY: hash2(index, 37) * Math.PI * 2,
+    tilt: (hash2(index, 53) - 0.5) * 0.7,
   };
 }
 

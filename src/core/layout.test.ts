@@ -1,19 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { SLOTS_PER_COURSE, unsplitPilePos, UNSPLIT_PILE_SIZE, woodpileSlot } from './layout';
+import { unsplitPilePos, UNSPLIT_PILE_SIZE, woodpileSlot } from './layout';
 
 describe('woodpileSlot', () => {
   it('is deterministic', () => {
     expect(woodpileSlot(14)).toEqual(woodpileSlot(14));
   });
 
-  it('keeps the pile in a band around the block', () => {
-    for (let i = 0; i < 60; i++) {
+  it('keeps the heap a compact mound behind the block', () => {
+    // every billet stays within a bounded footprint around one center — a heap,
+    // not a rick sprawling around the whole arc
+    const c = woodpileSlot(0);
+    let cx = 0, cz = 0;
+    for (let i = 0; i < 40; i++) { cx += woodpileSlot(i).x; cz += woodpileSlot(i).z; }
+    cx /= 40; cz /= 40;
+    for (let i = 0; i < 40; i++) {
       const s = woodpileSlot(i);
-      const r = Math.hypot(s.x, s.z);
-      // a single continuous rick around the block — never sprawling outward
-      expect(r).toBeGreaterThan(1.7);
-      expect(r).toBeLessThan(2.0);
+      expect(Math.hypot(s.x - cx, s.z - cz)).toBeLessThan(0.95);
     }
+    expect(c).toBeDefined();
   });
 
   it('leaves the sector where the player stands open', () => {
@@ -26,36 +30,19 @@ describe('woodpileSlot', () => {
     }
   });
 
-  it('fills a course left to right before starting the next', () => {
-    // consecutive pieces in one course advance monotonically along the arc
-    const xs: number[] = [];
-    for (let i = 0; i < SLOTS_PER_COURSE; i++) xs.push(woodpileSlot(i).x);
-    for (let i = 1; i < xs.length; i++) {
-      expect(xs[i]).toBeGreaterThan(xs[i - 1]);
-    }
+  it('grows upward as it fills — later billets pile on top', () => {
+    // the base course sits near the ground; a much later billet sits higher
+    expect(woodpileSlot(0).y).toBeLessThan(0.1);
+    expect(woodpileSlot(30).y).toBeGreaterThan(woodpileSlot(0).y + 0.15);
   });
 
-  it('climbs a course only once the one below is full', () => {
-    // the whole first course sits at ground level
-    for (let i = 1; i < SLOTS_PER_COURSE; i++) {
-      expect(woodpileSlot(i).y).toBeCloseTo(woodpileSlot(0).y);
+  it('tumbles each billet — no two share a pose', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      const s = woodpileSlot(i);
+      seen.add(`${s.x.toFixed(3)},${s.y.toFixed(3)},${s.z.toFixed(3)}`);
     }
-    // the next piece starts a course on top
-    expect(woodpileSlot(SLOTS_PER_COURSE).y).toBeGreaterThan(woodpileSlot(0).y);
-  });
-
-  it('is one continuous rick, not per-round clumps', () => {
-    // neighbouring pieces sit a roughly even step apart the whole way along —
-    // no big gaps between "bundles", which is what read as separate stacks
-    const steps: number[] = [];
-    for (let i = 1; i < SLOTS_PER_COURSE; i++) {
-      const a = woodpileSlot(i - 1);
-      const b = woodpileSlot(i);
-      steps.push(Math.hypot(a.x - b.x, a.z - b.z));
-    }
-    const min = Math.min(...steps);
-    const max = Math.max(...steps);
-    expect(max / min).toBeLessThan(1.5);
+    expect(seen.size).toBe(60);
   });
 });
 

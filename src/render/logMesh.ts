@@ -21,15 +21,20 @@ export function buildPieceMesh(piece: PieceState): PieceMesh {
   const geo = buildGeometry(piece);
   const spec = piece.spec;
 
+  // The color canvases double as bump sources: their light/dark streaks are
+  // exactly the ridges and fissures we want in relief, so side-light catches
+  // real surface instead of a flat decal. Free — no extra textures uploaded.
+  const bark = barkTexture(spec);
   const matBark = new THREE.MeshStandardMaterial({
-    map: barkTexture(spec), roughness: 0.95, side: THREE.DoubleSide,
+    map: bark, bumpMap: bark, bumpScale: 1.1, roughness: 0.95, side: THREE.DoubleSide,
   });
   let end = endTexture(piece);
   const matEnd = new THREE.MeshStandardMaterial({
     map: end.texture, roughness: 0.85, side: THREE.DoubleSide,
   });
+  const grain = grainTexture(spec);
   const matSplit = new THREE.MeshStandardMaterial({
-    map: grainTexture(spec), roughness: 0.9, side: THREE.DoubleSide,
+    map: grain, bumpMap: grain, bumpScale: 0.6, roughness: 0.9, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(geo, [matBark, matEnd, matSplit]);

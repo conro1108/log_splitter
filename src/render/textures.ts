@@ -196,6 +196,122 @@ export function barkTexture(spec: LogSpec): THREE.CanvasTexture {
   return t;
 }
 
+/**
+ * End grain of the chopping block: a big old weathered stump face. Aged grey
+ * over warm wood, off-center pith, and several long radial checking cracks —
+ * the splits that open as a round dries. This is the hero surface the round
+ * sits on, so it carries more character than a fresh log's end cap.
+ */
+export function blockTopTexture(seed: number): THREE.CanvasTexture {
+  const key = `blocktop:${seed}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+
+  const rand = mulberry32(seed ^ 0xb10c);
+  const [c, ctx] = makeCanvas();
+
+  // warm heartwood, greyed and dirtied by weather toward the outside
+  ctx.fillStyle = '#b7996a';
+  ctx.fillRect(0, 0, S, S);
+  const wash = ctx.createRadialGradient(S / 2, S / 2, S * 0.1, S / 2, S / 2, S * 0.55);
+  wash.addColorStop(0, 'rgba(150, 128, 92, 0)');
+  wash.addColorStop(1, 'rgba(120, 118, 108, 0.55)'); // grey weathering at the rim
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, S, S);
+
+  const cx = S / 2 + (rand() - 0.5) * S * 0.14;
+  const cy = S / 2 + (rand() - 0.5) * S * 0.14;
+  const maxR = S / 2;
+
+  const rings = 22 + Math.floor(rand() * 8);
+  ctx.strokeStyle = '#6f5a3c';
+  for (let i = 1; i <= rings; i++) {
+    const rr = (i / rings) * maxR * 1.1;
+    const wobAmp = rr * 0.03;
+    const wobPhase = rand() * Math.PI * 2;
+    const wobK = 2 + Math.floor(rand() * 3);
+    ctx.globalAlpha = 0.12 + rand() * 0.18;
+    ctx.lineWidth = 0.8 + rand() * 1.4;
+    ctx.beginPath();
+    for (let a = 0; a <= Math.PI * 2 + 0.05; a += 0.12) {
+      const r = rr + Math.sin(a * wobK + wobPhase) * wobAmp;
+      const x = cx + Math.cos(a) * r;
+      const y = cy - Math.sin(a) * r;
+      if (a === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // radial checking cracks: a few long dark splits from the pith outward
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = '#221912';
+  ctx.lineCap = 'round';
+  const checks = 3 + Math.floor(rand() * 3);
+  for (let k = 0; k < checks; k++) {
+    const dir = rand() * Math.PI * 2;
+    const len = maxR * (0.7 + rand() * 0.45);
+    const dx = Math.cos(dir);
+    const dy = -Math.sin(dir);
+    ctx.lineWidth = 3.5 + rand() * 3.5;
+    ctx.globalAlpha = 0.75;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    const steps = 8;
+    for (let s = 1; s <= steps; s++) {
+      const t = (s / steps) * len;
+      const j = (rand() - 0.5) * 12;
+      ctx.lineWidth = (3.5 + rand() * 3) * (1 - s / steps / 1.4); // taper outward
+      ctx.lineTo(cx + dx * t - dy * j, cy + dy * t + dx * j);
+    }
+    ctx.stroke();
+  }
+
+  // grubby speckle so it doesn't read as clean sanded wood
+  ctx.globalAlpha = 1;
+  for (let i = 0; i < 900; i++) {
+    const x = rand() * S, y = rand() * S;
+    ctx.fillStyle = rand() > 0.5 ? 'rgba(60,50,36,0.15)' : 'rgba(150,150,140,0.12)';
+    ctx.fillRect(x, y, 1 + rand() * 2, 1 + rand() * 2);
+  }
+
+  const t = toTexture(c);
+  cache.set(key, t);
+  return t;
+}
+
+/** Weathered grey bark for the chopping-block sides: deep vertical fissures. */
+export function blockBarkTexture(seed: number): THREE.CanvasTexture {
+  const key = `blockbark:${seed}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+
+  const rand = mulberry32(seed ^ 0xba7d);
+  const [c, ctx] = makeCanvas();
+
+  ctx.fillStyle = '#6d655a'; // weathered grey-brown
+  ctx.fillRect(0, 0, S, S);
+  for (let i = 0; i < 120; i++) {
+    const x0 = rand() * S;
+    const dark = rand() > 0.45;
+    ctx.strokeStyle = dark ? 'rgba(24,20,16,0.6)' : 'rgba(180,178,168,0.35)';
+    ctx.globalAlpha = 0.15 + rand() * 0.3;
+    ctx.lineWidth = 1 + rand() * 4;
+    ctx.beginPath();
+    ctx.moveTo(x0, 0);
+    ctx.bezierCurveTo(
+      x0 + (rand() - 0.5) * 14, S * 0.33,
+      x0 + (rand() - 0.5) * 14, S * 0.66,
+      x0 + (rand() - 0.5) * 12, S,
+    );
+    ctx.stroke();
+  }
+  const t = toTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  cache.set(key, t);
+  return t;
+}
+
 /** Split-face grain: pale fresh wood with long fibers. */
 export function grainTexture(spec: LogSpec): THREE.CanvasTexture {
   const key = `grain:${spec.seed}`;
