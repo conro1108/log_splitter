@@ -39,6 +39,15 @@ for (let i = 0; i < 400; i++) {
 
 // let the last pieces settle onto the pile
 await page.waitForTimeout(2500);
+
+// optional: orbit the view by N degrees before shooting (a wheel turn)
+const orbitDeg = Number(process.env.ORBIT ?? 0);
+if (orbitDeg) {
+  await page.evaluate((deltaY) => window.dispatchEvent(new WheelEvent('wheel', { deltaY })),
+    (orbitDeg * Math.PI / 180) / 0.0035);
+  await page.waitForTimeout(400);
+}
+
 await page.screenshot({ path: out });
 await browser.close();
 clearTimeout(watchdog);

@@ -12,9 +12,7 @@ import {
 } from './core/split';
 import { buildPieceMesh, type PieceMesh } from './render/logMesh';
 import { buildMaul } from './render/maul';
-import {
-  lyingQuaternion, PieceSim, reassembledRoundQuat, slotPosition,
-} from './render/pieces';
+import { lyingQuaternion, PieceSim, reassembledPose } from './render/pieces';
 import { createYard } from './render/scene';
 import { UI } from './ui';
 
@@ -43,7 +41,8 @@ function save(): void {
 type Phase = 'idle' | 'swinging' | 'stuck' | 'placing';
 let phase: Phase = 'placing';
 let current: PieceMesh | null = null;
-let spinOffset = 0;
+/** camera orbit angle around the yard; turning the view, not the log */
+let viewYaw = 0;
 let stuckClicksLeft = 0;
 let shakeT = 0;
 let hintRetired = false;
@@ -62,9 +61,9 @@ for (let i = 0; i < session.stacked.length; i++) {
   const piece: PieceState = { spec, arcStart: p.arc, arcEnd: p.arc + p.span, cracks: {} };
   const pm = buildPieceMesh(piece);
   const { bundle } = savedBundles[i];
-  const slot = woodpileSlot(bundle);
-  pm.mesh.position.copy(slotPosition(slot, p.r));
-  pm.mesh.quaternion.copy(reassembledRoundQuat(slot));
+  const pose = reassembledPose(woodpileSlot(bundle), p.r, p.arc + p.span / 2);
+  pm.mesh.position.copy(pose.position);
+  pm.mesh.quaternion.copy(pose.quaternion);
   yard.scene.add(pm.mesh);
 }
 
@@ -93,7 +92,11 @@ function deliverPile(): void {
 // --- maul ---------------------------------------------------------------
 
 const maul = buildMaul();
-yard.scene.add(maul);
+// the maul rides a rig that orbits with the camera, so it stays in front of the
+// player as the view turns around the yard; its poses are in this rotated frame
+const maulRig = new THREE.Group();
+maulRig.add(maul);
+yard.scene.add(maulRig);
 
 interface Pose { x: number; y: number; z: number; rx: number; ry: number; rz: number }
 // standing bit-down on the ground beside the block, handle leaning back against
@@ -193,7 +196,8 @@ function updateAim(clientX: number, clientY: number): void {
   if (dist > spec.radius * 1.05) { aimGroup.visible = false; return; }
 
   const worldAngle = Math.atan2(pz, px);
-  const localAngle = normalizeAngle(worldAngle + spinOffset);
+  // the log isn't spun any more — turning orbits the view — so world == local
+  const localAngle = normalizeAngle(worldAngle);
   if (!isFullRound(current.piece)) {
     const rel = normalizeAngle(localAngle - current.piece.arcStart);
     if (rel > pieceSpan(current.piece)) { aimGroup.visible = false; return; }
@@ -262,7 +266,6 @@ const UPRIGHT = new THREE.Quaternion();
 function placeNext(): void {
   if (current || phase === 'swinging' || phase === 'stuck') return;
   phase = 'placing';
-  spinOffset = 0;
 
   const fromQueue = queue.shift();
   if (fromQueue) {
@@ -298,13 +301,17 @@ function routeSettled(pm: PieceMesh): void {
   if (isStackable(pm.piece)) {
     pileCursor = nextBundleSlot(pileCursor, pileCursorSeed, pm.piece.spec.seed);
     pileCursorSeed = pm.piece.spec.seed;
-    const slot = woodpileSlot(pileCursor.bundle);
+    const pose = reassembledPose(
+      woodpileSlot(pileCursor.bundle),
+      pm.piece.spec.radius,
+      pm.piece.arcStart + pieceSpan(pm.piece) / 2,
+    );
     stackFlights++;
     window.setTimeout(() => {
       sim.flyTo(
         pm.mesh,
-        slotPosition(slot, pm.piece.spec.radius),
-        reassembledRoundQuat(slot),
+        pose.position,
+        pose.quaternion,
         0.85,
         () => {
           stackFlights--;
@@ -338,9 +345,8 @@ function onSplit(children: [PieceState, PieceState]): void {
   for (const child of children) {
     const pm = buildPieceMesh(child);
     pm.mesh.position.set(0, yard.blockTop, 0);
-    pm.mesh.rotation.y = spinOffset;
     yard.scene.add(pm.mesh);
-    const bisWorld = child.arcStart + pieceSpan(child) / 2 - spinOffset;
+    const bisWorld = child.arcStart + pieceSpan(child) / 2;
     const impulse = new THREE.Vector3(
       Math.cos(bisWorld) * (1.0 + Math.random() * 0.5),
       1.3 + Math.random() * 0.5,
@@ -352,7 +358,6 @@ function onSplit(children: [PieceState, PieceState]): void {
     pendingPieces++;
     sim.toss(pm.mesh, impulse, spin, Math.max(spec.radius * 0.7, 0.1), () => routeSettled(pm));
   }
-  spinOffset = 0;
 
   if (!hintRetired) {
     hintRetired = true;
@@ -362,20 +367,26 @@ function onSplit(children: [PieceState, PieceState]): void {
 
 // --- the swing itself ---------------------------------------------------
 
-function doSwing(localAngle: number, radialFrac: number, power: number, accuracy: number): void {
+function doSwing(worldAngle: number, radialFrac: number, power: number, accuracy: number): void {
   if (!current || phase !== 'idle') return;
   phase = 'swinging';
   aimGroup.visible = false;
 
   const piece = current.piece;
   const spec = piece.spec;
-  const worldAngle = localAngle - spinOffset;
+  const localAngle = normalizeAngle(worldAngle); // log unspun: world == local
   const faceY = yard.blockTop + spec.length;
   const hitR = Math.min(radialFrac, 0.95) * spec.radius;
-  const hit = new THREE.Vector3(
+  // where the blow lands in the world (chips, the log itself)
+  const worldHit = new THREE.Vector3(
     Math.cos(worldAngle) * hitR, faceY, Math.sin(worldAngle) * hitR,
   );
-  const bitYaw = Math.PI / 2 - worldAngle;
+  // the same point in the maul's orbiting rig frame, where its poses live
+  const maulAngle = worldAngle + viewYaw;
+  const hit = new THREE.Vector3(
+    Math.cos(maulAngle) * hitR, faceY, Math.sin(maulAngle) * hitR,
+  );
+  const bitYaw = Math.PI / 2 - maulAngle;
 
   const raised: Pose = {
     x: hit.x + 0.1, y: hit.y + 1.0, z: hit.z + 0.45,
@@ -392,7 +403,7 @@ function doSwing(localAngle: number, radialFrac: number, power: number, accuracy
     switch (result.outcome) {
       case 'split': {
         sfx.pop(heft);
-        burstChips(hit, '#e6d3a8', 9);
+        burstChips(worldHit, '#e6d3a8', 9);
         maulGo({ ...struck, y: struck.y - 0.05 }, 0.1);
         maulGo(REST_POSE, 0.6);
         onSplit(result.pieces!);
@@ -401,7 +412,7 @@ function doSwing(localAngle: number, radialFrac: number, power: number, accuracy
       }
       case 'partial': {
         sfx.thunk(power);
-        burstChips(hit, '#d9c396', 5);
+        burstChips(worldHit, '#d9c396', 5);
         current!.refreshCracks();
         shakeT = 0.25;
         maulGo(raised, 0.3);
@@ -421,8 +432,8 @@ function doSwing(localAngle: number, radialFrac: number, power: number, accuracy
       case 'glance': {
         sfx.glance();
         maulGo({
-          x: hit.x + Math.cos(worldAngle + 1.4) * 0.5, y: yard.blockTop - 0.1,
-          z: hit.z + Math.sin(worldAngle + 1.4) * 0.5, rx: -0.4, ry: bitYaw, rz: 0.8,
+          x: hit.x + Math.cos(maulAngle + 1.4) * 0.5, y: yard.blockTop - 0.1,
+          z: hit.z + Math.sin(maulAngle + 1.4) * 0.5, rx: -0.4, ry: bitYaw, rz: 0.8,
         }, 0.22, true);
         maulGo(REST_POSE, 0.6);
         phase = 'idle';
@@ -461,22 +472,21 @@ function wiggle(): void {
 const isTouch = matchMedia('(hover: none)').matches;
 
 const HINT = isTouch
-  ? 'drag the log to turn it · tap where you want the split'
-  : 'scroll to turn the log · click where you want the split';
+  ? 'drag to turn the yard · tap where you want the split'
+  : 'scroll to turn the yard · click where you want the split';
 ui.hint(HINT);
 
 let downAim: Aim | null = null;
 let pointerActive = false;
-/** horizontal drag turns the log; only becomes a turn past a small deadzone */
+/** horizontal drag orbits the view; only becomes a turn past a small deadzone */
 let dragTurning = false;
 let dragLastX = 0;
 let dragStartX = 0;
 let dragStartY = 0;
 
-function turnLog(dxPixels: number): void {
-  if (!current) return;
-  spinOffset = normalizeAngle(spinOffset + dxPixels * 0.006);
-  current.mesh.rotation.y = spinOffset;
+/** orbit the camera around the yard — everything turns, not just the log */
+function turnView(dxPixels: number): void {
+  viewYaw = normalizeAngle(viewYaw - dxPixels * 0.006);
 }
 
 window.addEventListener('pointermove', (e) => {
@@ -487,7 +497,7 @@ window.addEventListener('pointermove', (e) => {
       dragTurning = true;
     }
     if (dragTurning) {
-      turnLog(e.clientX - dragLastX);
+      turnView(e.clientX - dragLastX);
       dragLastX = e.clientX;
     }
     return;
@@ -516,11 +526,11 @@ window.addEventListener('pointerup', () => {
   const wasTurning = dragTurning;
   dragTurning = false;
   if (phase !== 'idle') return;
-  if (wasTurning) return; // that gesture turned the log; don't strike
+  if (wasTurning) return; // that gesture turned the view; don't strike
   if (!downAim) return;
 
   doSwing(
-    downAim.localAngle,
+    downAim.worldAngle,
     downAim.radialFrac,
     0.82 + Math.random() * 0.13,
     0.9 + Math.random() * 0.1,
@@ -533,9 +543,7 @@ window.addEventListener('pointercancel', () => {
 });
 
 window.addEventListener('wheel', (e) => {
-  if (!current || (phase !== 'idle' && phase !== 'stuck')) return;
-  spinOffset = normalizeAngle(spinOffset + e.deltaY * 0.0035);
-  current.mesh.rotation.y = spinOffset;
+  viewYaw = normalizeAngle(viewYaw + e.deltaY * 0.0035);
 }, { passive: true });
 
 // keep the page itself inert under a game gesture (pull-to-refresh, zoom)
@@ -585,10 +593,10 @@ Object.defineProperty(window, '__ls', {
     get pending() { return pendingPieces; },
     get lastOutcome() { return lastOutcome; },
     get stacked() { return session.stacked.length; },
-    strikeAt(localAngle: number, radialFrac = 0.45, power = 0.9, accuracy = 0.95) {
+    strikeAt(worldAngle: number, radialFrac = 0.45, power = 0.9, accuracy = 0.95) {
       if (phase === 'stuck') { wiggle(); return 'wiggled'; }
       if (phase !== 'idle' || !current) return phase;
-      doSwing(localAngle, radialFrac, power, accuracy);
+      doSwing(worldAngle, radialFrac, power, accuracy);
       return 'struck';
     },
   },
@@ -632,14 +640,17 @@ function tick(): void {
     );
   }
 
-  // idle camera breath, around whatever framing the viewport calls for
+  // idle camera breath, orbited around the yard by the current view angle
   const f = yard.frame;
-  yard.camera.position.set(
-    Math.sin(elapsed * 0.11) * 0.04,
-    f.height + Math.sin(elapsed * 0.07) * 0.02,
-    f.dist,
-  );
+  const bx = Math.sin(elapsed * 0.11) * 0.04;
+  const by = f.height + Math.sin(elapsed * 0.07) * 0.02;
+  const bz = f.dist;
+  const c = Math.cos(viewYaw);
+  const s = Math.sin(viewYaw);
+  yard.camera.position.set(bx * c + bz * s, by, -bx * s + bz * c);
   yard.camera.lookAt(0, f.lookAtY, 0);
+  // the maul rig turns with the view so the axe stays in front of the player
+  maulRig.rotation.y = viewYaw;
 
   yard.renderer.render(yard.scene, yard.camera);
 }

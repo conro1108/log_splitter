@@ -24,25 +24,26 @@ const ARC_START = (218 * Math.PI) / 180;
 const ARC_SPAN = (128 * Math.PI) / 180;
 
 /**
- * One round's worth of splits becomes one *bundle*: its wedges reassembled
- * into the round it came from, lying on its side (bark out, split faces meeting
- * at the axis). Bundles rack up along the arc left to right, one round per log,
- * so the pile reads as split rounds stacked in a row. Only once the arc is full
- * does a new course start on top.
+ * One round's worth of splits becomes one *bundle*: its wedges set back into the
+ * round they came from, lying on its side — but bloomed apart a little (see
+ * `reassembledPose`) so the split lines open into visible gaps and it reads as
+ * split wood, not a whole log. Every piece of a round shares one bundle center;
+ * the wedges' own arc positions do the arranging, which is what keeps them from
+ * overlapping. Bundles fill the arc left to right, one round per log; only once
+ * the arc is full does a course start on top.
  */
 const BUNDLE_WIDTH = 0.42;
 /** how many logs the arc holds before the pile starts a course on top */
 export const BUNDLES_PER_LAYER = Math.floor((ARC_SPAN * PILE_RADIUS) / BUNDLE_WIDTH);
-/** a round lying on its side stands about a diameter tall */
+/** a bloomed round lying on its side stands about a diameter tall */
 const LAYER_HEIGHT = 0.36;
 /** nominal upper bound on splits per round, for callers that iterate a bundle */
 export const PER_BUNDLE = 8;
 
 /**
- * All pieces of one round share a bundle *center*; every wedge is placed there
- * with the same lay-flat orientation, so their baked-in arc positions slot back
- * together into the round. `k` (the piece index) no longer moves the piece —
- * the reassembly does the arranging.
+ * All pieces of one round share this bundle center; `reassembledPose` places
+ * each at its own arc position and blooms it outward, so `k` doesn't move the
+ * slot — the arc positions arrange the wedges without overlap.
  */
 export function woodpileSlot(bundle: number, _k = 0): Slot {
   const layer = Math.floor(bundle / BUNDLES_PER_LAYER);
@@ -58,12 +59,12 @@ export function woodpileSlot(bundle: number, _k = 0): Slot {
   const r = PILE_RADIUS + jR;
 
   return {
-    // y is the resting *surface*; the renderer lifts a piece by its radius
+    // y is the resting *surface*; reassembledPose lifts the axis by one radius
     x: Math.cos(a + jA) * r,
     y: layer * LAYER_HEIGHT,
     z: Math.sin(a + jA) * r,
     // tangent to the arc; +π/2 turns the radial direction into the tangent
-    rotY: -(a + jA) + Math.PI / 2 + (hash2(bundle, 37) - 0.5) * 0.12,
+    rotY: -(a + jA) + Math.PI / 2 + (hash2(bundle, 37) - 0.5) * 0.1,
     tilt: (hash2(bundle, 53) - 0.5) * 0.05,
   };
 }

@@ -105,9 +105,9 @@ export function createYard(container: HTMLElement): Yard {
   scene.add(ground);
 
   // chopping block: a fat old stump
-  const blockHeight = 0.5;
+  const blockHeight = 0.52;
   const block = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.24, 0.28, blockHeight, 20),
+    new THREE.CylinderGeometry(0.34, 0.39, blockHeight, 24),
     new THREE.MeshStandardMaterial({ color: '#6b5138', roughness: 0.95 }),
   );
   block.position.y = blockHeight / 2;
@@ -115,7 +115,7 @@ export function createYard(container: HTMLElement): Yard {
   block.receiveShadow = true;
   scene.add(block);
   const blockFace = new THREE.Mesh(
-    new THREE.CircleGeometry(0.235, 20),
+    new THREE.CircleGeometry(0.335, 24),
     new THREE.MeshStandardMaterial({ color: '#a8895f', roughness: 0.9 }),
   );
   blockFace.rotation.x = -Math.PI / 2;

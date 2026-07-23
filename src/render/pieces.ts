@@ -171,21 +171,25 @@ function quatForSlot(slot: Slot): THREE.Quaternion {
 }
 
 /**
- * Orientation for a round reassembled from its splits, lying on its side. Every
- * piece of one round gets this *same* transform, so their baked-in arc sectors
- * slot back together into the whole round — bark out, faces meeting at the axis.
- * (bisector = π/2 makes the per-piece spin identity, which is exactly what
- * leaves each wedge at its own arc position instead of flattening it bark-down.)
+ * Resting pose for a wedge set back into its round, lying on its side. Every
+ * piece of one round gets the same lay-flat orientation (bisector = π/2 → no
+ * per-piece twist), so their baked-in arc sectors slot back together without
+ * overlapping. Then each is *bloomed* a little outward along its own bark
+ * bisector, opening the split lines into visible gaps — so the round reads as
+ * split wood rather than a whole log.
+ *
+ * `radius` lifts the axis one radius above the resting surface (it lies on its
+ * bark); `bisector` is the wedge's local arc-middle angle.
  */
-export function reassembledRoundQuat(slot: Slot): THREE.Quaternion {
-  return lyingQuaternion(slot, Math.PI / 2);
-}
-
-/**
- * World position for a piece in a woodpile slot. Slots are stated as the
- * height of the *resting surface*; a bark-down piece hangs its axis one radius
- * above that, so the offset lives here rather than in every call site.
- */
-export function slotPosition(slot: Slot, radius: number): THREE.Vector3 {
-  return new THREE.Vector3(slot.x, slot.y + radius, slot.z);
+export function reassembledPose(
+  slot: Slot,
+  radius: number,
+  bisector: number,
+): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
+  const quaternion = lyingQuaternion(slot, Math.PI / 2);
+  const bloom = new THREE.Vector3(Math.cos(bisector), 0, Math.sin(bisector))
+    .applyQuaternion(quaternion)
+    .multiplyScalar(0.03);
+  const position = new THREE.Vector3(slot.x, slot.y + radius, slot.z).add(bloom);
+  return { position, quaternion };
 }
