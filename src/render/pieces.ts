@@ -170,9 +170,15 @@ function quatForSlot(slot: Slot): THREE.Quaternion {
   return lyingQuaternion(slot);
 }
 
-/** slot-quat but with a known arc bisector (wedges land bark-down) */
-export function quatForSlotWithBisector(slot: Slot, bisector: number): THREE.Quaternion {
-  return lyingQuaternion(slot, bisector);
+/**
+ * Orientation for a round reassembled from its splits, lying on its side. Every
+ * piece of one round gets this *same* transform, so their baked-in arc sectors
+ * slot back together into the whole round — bark out, faces meeting at the axis.
+ * (bisector = π/2 makes the per-piece spin identity, which is exactly what
+ * leaves each wedge at its own arc position instead of flattening it bark-down.)
+ */
+export function reassembledRoundQuat(slot: Slot): THREE.Quaternion {
+  return lyingQuaternion(slot, Math.PI / 2);
 }
 
 /**

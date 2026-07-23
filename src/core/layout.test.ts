@@ -49,20 +49,21 @@ describe('woodpileSlot', () => {
     expect(wrapped.x).toBeLessThan(woodpileSlot(BUNDLES_PER_LAYER - 1, 0).x);
   });
 
-  it('stacks a bundle in courses of three, wider than it is tall', () => {
-    const slots = [0, 1, 2, 3, 4, 5].map((k) => woodpileSlot(7, k));
-    // the first three share a height; the next three sit a course above
-    expect(slots[1].y).toBeCloseTo(slots[0].y);
-    expect(slots[2].y).toBeCloseTo(slots[0].y);
-    expect(slots[3].y).toBeGreaterThan(slots[0].y);
-    expect(slots[4].y).toBeCloseTo(slots[3].y);
-    // and a course spreads across the pile's depth rather than overlapping
-    const radii = slots.slice(0, 3).map((s) => Math.hypot(s.x, s.z)).sort();
-    expect(radii[2] - radii[0]).toBeGreaterThan(0.15);
+  it('reassembles a round: a bundle\'s pieces share one center', () => {
+    // every wedge of a round is placed at the same slot and lay-flat pose; the
+    // baked-in arc positions do the arranging, so the round comes back whole
+    const s0 = woodpileSlot(7, 0);
+    for (let k = 1; k < PER_BUNDLE; k++) {
+      const s = woodpileSlot(7, k);
+      expect(s.x).toBeCloseTo(s0.x);
+      expect(s.y).toBeCloseTo(s0.y);
+      expect(s.z).toBeCloseTo(s0.z);
+      expect(s.rotY).toBeCloseTo(s0.rotY);
+    }
   });
 
   it('keeps a lopsided round from growing into a tower', () => {
-    // seven pieces off one round should still be under knee height
+    // a reassembled round is one course tall no matter how many splits it took
     const tallest = Math.max(...[0, 1, 2, 3, 4, 5, 6].map((k) => woodpileSlot(2, k).y));
     expect(tallest).toBeLessThan(0.5);
   });

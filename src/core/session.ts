@@ -8,6 +8,8 @@ export interface StackedPiece {
   r: number;
   len: number;
   span: number;
+  /** arcStart of the wedge, so a rebuilt round reassembles into its sectors */
+  arc: number;
   /** log seed, so a rebuilt pile keeps its colors */
   seed: number;
 }
@@ -34,6 +36,7 @@ export function recordStacked(s: SessionState, piece: PieceState): void {
     r: piece.spec.radius,
     len: piece.spec.length,
     span: pieceSpan(piece),
+    arc: piece.arcStart,
     seed: piece.spec.seed,
   });
   s.volume += pieceVolume(piece);
@@ -75,7 +78,7 @@ export function nextBundleSlot(prev: BundleSlot | null, prevSeed: number | null,
   return { bundle: prev.bundle, k: prev.k + 1 };
 }
 
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 
 export function serialize(s: SessionState): string {
   return JSON.stringify({ v: SAVE_VERSION, ...s });
@@ -97,11 +100,12 @@ export function deserialize(raw: string): SessionState | null {
     for (const p of d.stacked) {
       if (
         typeof p?.r !== 'number' || typeof p?.len !== 'number' ||
-        typeof p?.span !== 'number' || typeof p?.seed !== 'number'
+        typeof p?.span !== 'number' || typeof p?.arc !== 'number' ||
+        typeof p?.seed !== 'number'
       ) {
         return null;
       }
-      stacked.push({ r: p.r, len: p.len, span: p.span, seed: p.seed });
+      stacked.push({ r: p.r, len: p.len, span: p.span, arc: p.arc, seed: p.seed });
     }
     return {
       volume: d.volume,

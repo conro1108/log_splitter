@@ -13,7 +13,7 @@ import {
 import { buildPieceMesh, type PieceMesh } from './render/logMesh';
 import { buildMaul } from './render/maul';
 import {
-  lyingQuaternion, PieceSim, quatForSlotWithBisector, slotPosition,
+  lyingQuaternion, PieceSim, reassembledRoundQuat, slotPosition,
 } from './render/pieces';
 import { createYard } from './render/scene';
 import { UI } from './ui';
@@ -59,12 +59,12 @@ const savedBundles = bundleAssignments(session.stacked);
 for (let i = 0; i < session.stacked.length; i++) {
   const p = session.stacked[i];
   const spec = { ...generateLog(p.seed), radius: p.r, length: p.len };
-  const piece: PieceState = { spec, arcStart: 0, arcEnd: p.span, cracks: {} };
+  const piece: PieceState = { spec, arcStart: p.arc, arcEnd: p.arc + p.span, cracks: {} };
   const pm = buildPieceMesh(piece);
-  const { bundle, k } = savedBundles[i];
-  const slot = woodpileSlot(bundle, k);
+  const { bundle } = savedBundles[i];
+  const slot = woodpileSlot(bundle);
   pm.mesh.position.copy(slotPosition(slot, p.r));
-  pm.mesh.quaternion.copy(quatForSlotWithBisector(slot, p.span / 2));
+  pm.mesh.quaternion.copy(reassembledRoundQuat(slot));
   yard.scene.add(pm.mesh);
 }
 
@@ -96,8 +96,9 @@ const maul = buildMaul();
 yard.scene.add(maul);
 
 interface Pose { x: number; y: number; z: number; rx: number; ry: number; rz: number }
-// leaning against the block, bit planted, broad face turned toward the camera
-const REST_POSE: Pose = { x: 0.42, y: 0.02, z: 0.3, rx: 0.12, ry: 1.35, rz: 0.62 };
+// standing bit-down on the ground beside the block, handle leaning back against
+// it — a 3/4 turn shows the head as an axe instead of a flat dark triangle
+const REST_POSE: Pose = { x: 0.34, y: 0.0, z: 0.36, rx: 0.05, ry: 0.72, rz: -0.24 };
 
 function applyPose(p: Pose): void {
   maul.position.set(p.x, p.y, p.z);
@@ -297,14 +298,13 @@ function routeSettled(pm: PieceMesh): void {
   if (isStackable(pm.piece)) {
     pileCursor = nextBundleSlot(pileCursor, pileCursorSeed, pm.piece.spec.seed);
     pileCursorSeed = pm.piece.spec.seed;
-    const slot = woodpileSlot(pileCursor.bundle, pileCursor.k);
-    const bis = pm.piece.arcStart + pieceSpan(pm.piece) / 2;
+    const slot = woodpileSlot(pileCursor.bundle);
     stackFlights++;
     window.setTimeout(() => {
       sim.flyTo(
         pm.mesh,
         slotPosition(slot, pm.piece.spec.radius),
-        quatForSlotWithBisector(slot, bis),
+        reassembledRoundQuat(slot),
         0.85,
         () => {
           stackFlights--;

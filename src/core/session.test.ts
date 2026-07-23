@@ -39,7 +39,7 @@ describe('session', () => {
   });
 
   it('groups stacked pieces into one bundle per log', () => {
-    const p = (seed: number) => ({ r: 0.15, len: 0.4, span: Math.PI / 2, seed });
+    const p = (seed: number) => ({ r: 0.15, len: 0.4, span: Math.PI / 2, arc: 0, seed });
     expect(bundleAssignments([p(1), p(1), p(1), p(1), p(2), p(2)])).toEqual([
       { bundle: 0, k: 0 }, { bundle: 0, k: 1 }, { bundle: 0, k: 2 }, { bundle: 0, k: 3 },
       { bundle: 1, k: 0 }, { bundle: 1, k: 1 },

@@ -24,58 +24,47 @@ const ARC_START = (218 * Math.PI) / 180;
 const ARC_SPAN = (128 * Math.PI) / 180;
 
 /**
- * One round's worth of splits becomes one *bundle*: a small 2-over-2 stack of
- * its own slices. Bundles fill the arc left to right, one per log, so the pile
- * creeps along the ground rather than ringing the whole block thinly and then
- * thickening. Only once the arc is full does a new layer start on top.
+ * One round's worth of splits becomes one *bundle*: its wedges reassembled
+ * into the round it came from, lying on its side (bark out, split faces meeting
+ * at the axis). Bundles rack up along the arc left to right, one round per log,
+ * so the pile reads as split rounds stacked in a row. Only once the arc is full
+ * does a new course start on top.
  */
-const BUNDLE_WIDTH = 0.52;
+const BUNDLE_WIDTH = 0.42;
 /** how many logs the arc holds before the pile starts a course on top */
 export const BUNDLES_PER_LAYER = Math.floor((ARC_SPAN * PILE_RADIUS) / BUNDLE_WIDTH);
-/**
- * Three pieces to a course. A round rarely yields exactly four quarters —
- * uneven sector splits routinely give five or six — and a two-wide bundle
- * turns those into a narrow tower, so the bundle is wider than it is tall.
- */
-const PER_TIER = 3;
-/** radial spacing between neighbours in a course */
-const TIER_SPREAD = 0.115;
-/** a bark-down quarter stands about one log radius tall */
-const TIER_HEIGHT = 0.155;
-const TIERS_PER_BUNDLE = 2;
-const LAYER_HEIGHT = TIERS_PER_BUNDLE * TIER_HEIGHT + 0.02;
-
-/** a typical round's worth of splits */
-export const PER_BUNDLE = PER_TIER * TIERS_PER_BUNDLE;
+/** a round lying on its side stands about a diameter tall */
+const LAYER_HEIGHT = 0.36;
+/** nominal upper bound on splits per round, for callers that iterate a bundle */
+export const PER_BUNDLE = 8;
 
 /**
- * `bundle` counts logs stacked so far; `k` is the piece's index within its
- * own log's bundle. Pieces past PER_BUNDLE keep tiering up in place.
+ * All pieces of one round share a bundle *center*; every wedge is placed there
+ * with the same lay-flat orientation, so their baked-in arc positions slot back
+ * together into the round. `k` (the piece index) no longer moves the piece —
+ * the reassembly does the arranging.
  */
-export function woodpileSlot(bundle: number, k: number): Slot {
+export function woodpileSlot(bundle: number, _k = 0): Slot {
   const layer = Math.floor(bundle / BUNDLES_PER_LAYER);
   const col = bundle % BUNDLES_PER_LAYER;
-  // half-bundle offset on odd layers so upper courses sit in the valleys
+  // half-bundle offset on odd layers so upper courses nestle into the valleys
   const frac = (col + 0.5 + (layer % 2) * 0.5) / BUNDLES_PER_LAYER;
   const a = ARC_START + frac * ARC_SPAN;
 
-  const tier = Math.floor(k / PER_TIER);
-  const side = (k % PER_TIER) - (PER_TIER - 1) / 2; // -1, 0, +1 across the course
-
-  // Jitter is deliberately small: this should read as wood someone stacked,
-  // not wood someone threw. Courses sit squarely on the pair below.
-  const jA = (hash2(bundle * 8 + k, 11) - 0.5) * 0.014;
-  const jR = (hash2(bundle * 8 + k, 23) - 0.5) * 0.03;
-  const r = PILE_RADIUS + side * TIER_SPREAD + jR;
+  // Per-bundle jitter (shared by all the round's pieces so the round stays whole
+  // rather than scattering). Small: wood someone stacked, not wood someone threw.
+  const jA = (hash2(bundle, 11) - 0.5) * 0.02;
+  const jR = (hash2(bundle, 23) - 0.5) * 0.04;
+  const r = PILE_RADIUS + jR;
 
   return {
     // y is the resting *surface*; the renderer lifts a piece by its radius
     x: Math.cos(a + jA) * r,
-    y: layer * LAYER_HEIGHT + tier * TIER_HEIGHT,
+    y: layer * LAYER_HEIGHT,
     z: Math.sin(a + jA) * r,
     // tangent to the arc; +π/2 turns the radial direction into the tangent
-    rotY: -(a + jA) + Math.PI / 2 + (hash2(bundle * 8 + k, 37) - 0.5) * 0.06,
-    tilt: (hash2(bundle * 8 + k, 53) - 0.5) * 0.035,
+    rotY: -(a + jA) + Math.PI / 2 + (hash2(bundle, 37) - 0.5) * 0.12,
+    tilt: (hash2(bundle, 53) - 0.5) * 0.05,
   };
 }
 

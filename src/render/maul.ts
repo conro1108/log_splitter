@@ -13,28 +13,58 @@ import * as THREE from 'three';
 export function buildMaul(): THREE.Group {
   const g = new THREE.Group();
 
+  // dark forged steel for the body, a brighter honed strip for the bit so the
+  // cutting edge catches light and the head doesn't read as one flat blob
   const steel = new THREE.MeshStandardMaterial({
-    color: '#9aa0a8', metalness: 0.8, roughness: 0.38,
+    color: '#54585f', metalness: 0.85, roughness: 0.45,
   });
-  const wood = new THREE.MeshStandardMaterial({ color: '#a5763f', roughness: 0.85 });
+  const honed = new THREE.MeshStandardMaterial({
+    color: '#c7ccd4', metalness: 0.9, roughness: 0.25,
+  });
+  const wood = new THREE.MeshStandardMaterial({ color: '#7a5326', roughness: 0.8 });
 
   const head = new THREE.Mesh(axeHeadGeometry(), steel);
+  head.scale.setScalar(1.2);
   head.castShadow = true;
 
-  // haft: long, slightly flared, angled back toward the player
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.025, 0.86, 10), wood);
-  handle.position.set(0, 0.6, 0.085);
-  handle.rotation.x = 0.13;
+  // the sharpened bevel: a thin bright wedge riding the cutting edge
+  const bit = new THREE.Mesh(honeGeometry(), honed);
+  bit.scale.setScalar(1.2);
+  bit.castShadow = true;
+
+  // haft: long and stout, angled back toward the player, a touch of taper
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.9, 12), wood);
+  handle.position.set(0, 0.62, 0.09);
+  handle.rotation.x = 0.14;
   handle.castShadow = true;
 
-  // knob at the end of the haft so it doesn't read as a cut-off stick
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), wood);
-  knob.position.set(0, 1.02, 0.195);
-  knob.scale.set(1, 0.7, 1);
-  knob.castShadow = true;
+  // a slight fawn's-foot swell at the butt — a shaped haft end, not a cut stick,
+  // kept small so it never reads as a hammer poll
+  const swell = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.026, 0.05, 12), wood);
+  swell.position.set(0, 1.05, 0.2);
+  swell.rotation.x = 0.14;
+  swell.castShadow = true;
 
-  g.add(head, handle, knob);
+  g.add(head, bit, handle, swell);
   return g;
+}
+
+/**
+ * A thin bright sliver hugging the cutting edge (y≈0), a hair proud of the
+ * steel so it reads as a freshly honed bevel rather than z-fighting the head.
+ */
+function honeGeometry(): THREE.BufferGeometry {
+  const hw = 0.108; // just wider than the head's edge, so it rims it
+  const positions = [
+    -hw, 0.0, 0.0, hw, 0.0, 0.0, hw, 0.05, 0.028, -hw, 0.05, 0.028,
+    -hw, 0.0, 0.0, hw, 0.0, 0.0, hw, 0.05, -0.028, -hw, 0.05, -0.028,
+  ];
+  const indices = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
 }
 
 /**
